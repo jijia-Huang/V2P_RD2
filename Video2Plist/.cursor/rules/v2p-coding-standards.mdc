@@ -1,0 +1,472 @@
+---
+globs: *.py
+---
+
+# V2P 工具編碼規範
+
+## 檔案編碼
+
+所有 Python 檔案必須：
+- 使用 UTF-8 編碼
+- 在檔案開頭加入編碼聲明：`# -*- coding: utf-8 -*-`
+- 包含模組說明的 docstring
+
+範例：
+```python
+# -*- coding: utf-8 -*-
+"""
+模組說明
+"""
+```
+
+## 命名規範
+
+### 模組和檔案
+- 使用小寫字母和底線：`file_utils.py`, `error_handler.py`
+- 模組名稱應該簡潔且描述性
+
+### 類別
+- 使用 PascalCase：`ConfigManager`, `UIManager`
+- 類別名稱應該是名詞
+
+### 函數和方法
+- 使用 snake_case：`process_video()`, `save_config()`
+- 函數名稱應該是動詞或動詞片語
+- 私有方法使用底線前綴：`_normalize_path()`
+
+### 變數
+- 使用 snake_case：`output_path`, `frame_count`
+- 常數使用大寫字母和底線：`DEFAULT_CONFIG`, `VERSION_STRING`
+
+### 命名參考範例
+參考 [config.py](mdc:Tool/core/config.py) 和 [video.py](mdc:Tool/core/video.py) 的命名風格。
+
+## 錯誤處理規範
+
+### 使用自定義異常
+
+V2P 工具定義了三種主要異常類型（位於 [core/exceptions/](mdc:Tool/core/exceptions/)）：
+
+1. **ConfigError**: 配置相關錯誤
+   - FFmpeg 或 TexturePacker 路徑無效
+   - 配置檔案格式錯誤
+   - API 金鑰驗證失敗
+
+2. **FileError**: 文件操作錯誤
+   - 找不到輸入檔案
+   - 輸出目錄無法創建
+   - 檔案讀寫權限問題
+
+3. **ConversionError**: 轉換過程錯誤
+   - FFmpeg 執行失敗
+   - TexturePacker 打包失敗
+   - 影格提取失敗
+
+### 異常使用範例
+
+```python
+from .exceptions import ConfigError, FileError, ConversionError
+
+# 配置錯誤
+if not os.path.exists(ffmpeg_path):
+    raise ConfigError("找不到 FFmpeg 執行檔", details=f"路徑：{ffmpeg_path}")
+
+# 文件錯誤
+if not os.path.exists(video_path):
+    raise FileError("找不到影片檔案", details=f"路徑：{video_path}")
+
+# 轉換錯誤
+if result.returncode != 0:
+    raise ConversionError("影格提取失敗", details=result.stderr)
+```
+
+### 異常處理模式
+
+**在核心業務層**:
+```python
+def process_video(...):
+    try:
+        # 業務邏輯
+        pass
+    except (ConfigError, FileError, ConversionError):
+        # 重新拋出自定義異常
+        raise
+    except Exception as e:
+        # 包裝未預期的異常
+        raise ConversionError("處理失敗", details=str(e))
+```
+
+**在 UI 層**:
+```python
+from core.error_handler import handle_error
+
+def on_convert_click(...):
+    try:
+        return process_video(...)
+    except (ConfigError, FileError, ConversionError) as e:
+        return handle_error(e, ui_component=True)
+    except Exception as e:
+        return handle_error(e, ui_component=True)
+```
+
+## 日誌記錄規範
+
+### 日誌級別使用
+
+1. **DEBUG**: 詳細的除錯資訊
+   ```python
+   logging.debug(f"FFmpeg 命令：{' '.join(cmd)}")
+   logging.debug(f"載入的設定：{saved_config}")
+   ```
+
+2. **INFO**: 一般操作資訊
+   ```python
+   logging.info(f"開始處理影片：{mp4_file.name}")
+   logging.info(f"TexturePacker 完成，生成 {plist_count} 個 plist 檔案")
+   ```
+
+3. **WARNING**: 警告但不影響運行
+   ```python
+   logging.warning(f"未設定 TinyPNG API 金鑰，跳過壓縮")
+   ```
+
+4. **ERROR**: 錯誤情況
+   ```python
+   logging.error(f"FFmpeg 執行失敗：{result.stderr}")
+   logging.error(f"儲存設定失敗：{str(e)}", exc_info=True)
+   ```
+
+### 日誌內容規範
+
+1. **包含上下文**: 記錄足夠的資訊以便追蹤問題
+   ```python
+   logging.info(f"參數設定：FPS={fps}, 輸出名稱={output_name}")
+   ```
+
+2. **使用繁體中文**: 所有日誌訊息使用繁體中文
+   ```python
+   logging.info("使用者介面建立完成")
+   ```
+
+3. **記錄關鍵路徑**: 記錄重要的檔案路徑和目錄
+   ```python
+   logging.info(f"建立臨時目錄：{temp_folder}")
+   ```
+
+4. **例外時包含堆疊**: 使用 `exc_info=True`
+   ```python
+   except Exception as e:
+       logging.error(f"未預期的錯誤：{str(e)}", exc_info=True)
+   ```
+
+參考 [logger.py](mdc:Tool/core/logger.py) 的日誌系統設定。
+
+## 函數和方法規範
+
+### 函數文檔
+
+為公開函數和方法添加 docstring：
+
+```python
+def process_video(mp4_file, fps, output_name, ...):
+    """
+    處理影片轉換
+    
+    Args:
+        mp4_file: MP4 檔案物件
+        fps: 影格率
+        output_name: 輸出名稱
+        ...
+    
+    Returns:
+        str: 處理結果訊息
+    
+    Raises:
+        FileError: 找不到輸入檔案
+        ConversionError: 轉換過程發生錯誤
+    """
+```
+
+### 參數驗證
+
+在函數開始時驗證參數：
+
+```python
+def process_video(mp4_file, fps, output_name, ...):
+    """處理影片轉換"""
+    # 檢查和驗證
+    if not mp4_file:
+        raise FileError("請選擇 MP4 檔案")
+    
+    if not output_name:
+        raise ConfigError("請輸入輸出名稱")
+    
+    # 業務邏輯
+    ...
+```
+
+### 資源清理
+
+使用 try-finally 確保資源清理：
+
+```python
+def process_video(...):
+    temp_folder = None
+    try:
+        temp_folder = os.path.join(get_application_path(), "temp", output_name)
+        # 處理邏輯
+        ...
+    finally:
+        if temp_folder and os.path.exists(temp_folder):
+            shutil.rmtree(temp_folder, ignore_errors=True)
+            logging.info(f"清理臨時目錄：{temp_folder}")
+```
+
+## 路徑處理規範
+
+### 路徑正規化
+
+所有路徑應該正規化以支援跨平台：
+
+```python
+def _normalize_path(self, path):
+    """標準化路徑格式"""
+    if not path:
+        return ""
+    try:
+        if os.path.exists(path):
+            return os.path.abspath(path).replace("\\", "/")
+        return path.strip().strip('"').strip("'").replace("\\", "/")
+    except Exception as e:
+        logging.error(f"路徑格式化失敗：{str(e)}")
+        return ""
+```
+
+### 路徑拼接
+
+使用 `os.path.join()` 而非字串拼接：
+
+```python
+# 正確
+output_path = os.path.join(output_dir, f"{output_name}_{n}.plist")
+
+# 錯誤
+output_path = output_dir + "/" + output_name + "_" + str(n) + ".plist"
+```
+
+參考 [file_utils.py](mdc:Tool/core/file_utils.py) 的路徑處理工具。
+
+## 配置管理規範
+
+### 配置優先順序
+
+1. 程式內建預設值
+2. 配置檔案（config.yaml）
+3. 使用者偏好（preferences.json）
+
+範例：
+```python
+DEFAULT_CONFIG = {
+    "ffmpeg_path": "",
+    "texture_packer_path": "",
+}
+
+def load_config(self):
+    """載入設定"""
+    # 先使用預設值
+    self.config = DEFAULT_CONFIG.copy()
+    
+    # 然後載入檔案配置
+    if os.path.exists(config_path):
+        with open(config_path, "r") as f:
+            saved_config = yaml.safe_load(f)
+            self.config.update(saved_config)
+```
+
+### 配置驗證
+
+保存配置前進行驗證：
+
+```python
+def save_config(self, ffmpeg_path, texture_packer_path, ...):
+    """儲存設定"""
+    # 驗證路徑
+    if not os.path.exists(ffmpeg_path):
+        raise ConfigError("FFmpeg 路徑無效")
+    
+    if not os.path.exists(texture_packer_path):
+        raise ConfigError("TexturePacker 路徑無效")
+    
+    # 保存配置
+    ...
+```
+
+參考 [config.py](mdc:Tool/core/config.py) 的配置管理實現。
+
+## UI 元件規範
+
+### 元件命名
+
+使用描述性名稱：
+```python
+# 好的命名
+mp4_file = gr.File(label="上傳 MP4 檔案")
+fps_slider = gr.Slider(label="FPS（影格率）")
+output_name = gr.Textbox(label="輸出名稱")
+
+# 避免的命名
+file1 = gr.File()
+slider = gr.Slider()
+text = gr.Textbox()
+```
+
+### 事件處理
+
+將事件處理邏輯封裝在函數中：
+
+```python
+def update_preview(video):
+    """更新預覽"""
+    try:
+        if not video:
+            return None
+        return video.name
+    except Exception:
+        return None
+
+# 綁定事件
+mp4_file.change(
+    update_preview,
+    inputs=[mp4_file],
+    outputs=[preview_video]
+)
+```
+
+### 元件返回
+
+返回需要在其他地方使用的元件：
+
+```python
+def create_main_tab(config_manager):
+    """建立主要功能頁籤"""
+    with gr.Tab("轉換"):
+        mp4_file = gr.File(...)
+        output_name = gr.Textbox(...)
+        
+        # 返回元件
+        return {
+            "mp4_file": mp4_file,
+            "output_name": output_name,
+        }
+```
+
+參考 [ui/tabs/](mdc:Tool/ui/tabs/) 下各個頁籤的實現。
+
+## 版本控制規範
+
+### 版本號格式
+
+使用語義化版本號（Semantic Versioning）：
+
+```python
+VERSION = {
+    'major': 1,    # 重大更新，可能不相容
+    'minor': 0,    # 新功能，但向下相容
+    'patch': 4     # 錯誤修復
+}
+```
+
+### 版本檢查
+
+在關鍵位置檢查版本相容性：
+
+```python
+def check_compatibility():
+    """檢查相容性"""
+    # 檢查 Python 版本
+    current_python = sys.version_info[:2]
+    required_python = (3, 8)
+    
+    if current_python < required_python:
+        return False, "Python 版本過低"
+    
+    return True, "相容性檢查通過"
+```
+
+參考 [version.py](mdc:Tool/version.py) 的版本管理。
+
+## 測試和除錯
+
+### 除錯輸出
+
+使用適當的日誌級別進行除錯：
+
+```python
+# 開發除錯
+logging.debug(f"變數值：{variable}")
+
+# 流程追蹤
+logging.info(f"進入 {function_name}")
+
+# 性能追蹤
+start_time = time.time()
+# ... 操作 ...
+elapsed = time.time() - start_time
+logging.debug(f"操作耗時：{elapsed:.2f}s")
+```
+
+### 錯誤重現
+
+在日誌中記錄足夠的資訊以便重現錯誤：
+
+```python
+logging.error(
+    f"處理失敗 - "
+    f"檔案：{video_path}, "
+    f"FPS：{fps}, "
+    f"輸出：{output_name}, "
+    f"錯誤：{str(e)}"
+)
+```
+
+## 程式碼風格
+
+### 格式化
+
+- 縮排使用 4 個空格
+- 行長度建議不超過 100 字元
+- 運算符前後加空格
+- 逗號後加空格
+
+### 導入順序
+
+1. 標準庫
+2. 第三方庫
+3. 本地模組
+
+```python
+# 標準庫
+import os
+import logging
+import subprocess
+
+# 第三方庫
+import gradio as gr
+import yaml
+
+# 本地模組
+from core.config import ConfigManager
+from core.video import process_video
+```
+
+### 註釋
+
+- 使用繁體中文
+- 註釋應該解釋「為什麼」而非「做什麼」
+- 複雜邏輯添加註釋說明
+
+```python
+# 使用 frame_pts 參數確保輸出檔名按照影格順序編號
+# 這對 TexturePacker 的打包順序很重要
+cmd = [ffmpeg_path, "-i", video_path, "-frame_pts", "1", ...]
+```

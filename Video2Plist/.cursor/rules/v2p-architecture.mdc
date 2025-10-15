@@ -1,0 +1,279 @@
+---
+alwaysApply: true
+---
+
+# V2P 工具系統架構
+
+## 架構概述
+
+V2P 工具採用分層架構設計，確保職責分離和模組化：
+
+```
+┌─────────────────────────────────────────┐
+│         主程式層 (v2p.py)                │
+│    - 初始化和啟動                         │
+│    - 命令列參數處理                       │
+└─────────────────┬───────────────────────┘
+                  │
+┌─────────────────┴───────────────────────┐
+│            UI 管理層                      │
+│    - Gradio 介面構建                     │
+│    - 事件處理和綁定                       │
+│    - 使用者互動管理                       │
+└─────────────────┬───────────────────────┘
+                  │
+┌─────────────────┴───────────────────────┐
+│            核心業務層                     │
+│    - 視頻處理邏輯                         │
+│    - 配置管理                             │
+│    - 文件操作                             │
+│    - 異常處理                             │
+└─────────────────┬───────────────────────┘
+                  │
+┌─────────────────┴───────────────────────┐
+│          外部工具層                       │
+│    - FFmpeg (視頻處理)                   │
+│    - TexturePacker (材質打包)            │
+│    - TinyPNG API (圖像壓縮)              │
+└─────────────────────────────────────────┘
+```
+
+## 主程式層
+
+**檔案**: [v2p.py](mdc:Tool/v2p.py)
+
+**職責**:
+- 應用程式啟動和初始化
+- 命令列參數解析（port, log-level 等）
+- 日誌系統設定
+- ConfigManager 和 UIManager 初始化
+- Gradio 服務器啟動
+
+**關鍵流程**:
+```python
+main() → parse_args() → setup_logger() → ConfigManager() → UIManager() → demo.launch()
+```
+
+## UI 管理層
+
+### UIManager ([manager.py](mdc:Tool/ui/manager.py))
+
+**職責**:
+- 建立和管理所有 UI 元件
+- 處理頁面載入事件
+- 管理元件狀態更新
+- 整合各個功能頁籤
+
+**元件生命週期**:
+1. `__init__`: 初始化配置管理器引用
+2. `create_ui()`: 建立 Gradio 介面
+3. `_on_page_load()`: 載入使用者偏好設定
+4. 事件綁定和回調處理
+
+### 功能頁籤
+
+#### 1. 設定頁籤 ([settings_tab.py](mdc:Tool/ui/tabs/settings_tab.py))
+- FFmpeg 路徑配置
+- TexturePacker 路徑配置
+- TinyPNG API 金鑰設定
+- 主題和偏好設定
+
+#### 2. 轉換頁籤 ([main_tab.py](mdc:Tool/ui/tabs/main_tab.py))
+- MP4 檔案上傳
+- 轉換參數設定（FPS、材質大小、輸出格式）
+- 視頻預覽
+- 轉換執行和進度顯示
+
+#### 3. 輸出頁籤 ([output_tab.py](mdc:Tool/ui/tabs/output_tab.py))
+- 已轉換動畫列表
+- 預覽和管理輸出檔案
+
+#### 4. 管理頁籤 ([manage_tab.py](mdc:Tool/ui/tabs/manage_tab.py))
+- 檔案清理工具
+- 輸出目錄管理
+
+## 核心業務層
+
+### 配置管理 ([config.py](mdc:Tool/core/config.py))
+
+**ConfigManager 類**:
+- `load_config()`: 從 YAML 載入配置
+- `save_config()`: 儲存配置到 YAML
+- `load_preferences()`: 載入使用者偏好（JSON）
+- `save_preferences()`: 儲存使用者偏好
+- `test_executable()`: 測試外部工具可用性
+- `cleanup_old_files()`: 清理過期檔案
+
+**配置檔案**:
+- `config.yaml`: 工具路徑配置
+- `preferences.json`: 使用者偏好設定
+
+### 視頻處理 ([video.py](mdc:Tool/core/video.py))
+
+**核心函數**:
+
+1. `process_video()`: 主要處理流程
+   - 驗證輸入參數
+   - 調用 extract_frames()
+   - 調用 TexturePacker
+   - 可選的 TinyPNG 壓縮
+   - 保存 metadata
+
+2. `extract_frames()`: 影格提取
+   - 使用 FFmpeg 從視頻中提取影格
+   - 支援自定義 FPS
+   - 支援 PNG/JPG 格式
+   - 可調整品質參數
+
+3. `compress_png_with_tinypng()`: TinyPNG 壓縮
+   - 使用 TinyPNG API
+   - 記錄壓縮比率
+   - 錯誤處理和重試
+
+4. `save_metadata()`: 保存元數據
+   - 記錄 FPS、影格數、工具版本等
+   - JSON 格式輸出
+
+**處理流程**:
+```
+MP4 檔案 → FFmpeg 影格提取 → TexturePacker 打包 → [可選] TinyPNG 壓縮 → 輸出
+```
+
+### 文件工具 ([file_utils.py](mdc:Tool/core/file_utils.py))
+
+**工具函數**:
+- `get_application_path()`: 獲取應用程式根目錄
+- `get_output_dir()`: 獲取輸出目錄路徑
+- `ensure_output_dir()`: 確保輸出目錄存在
+- `get_videos_dir()`: 獲取 videos 目錄路徑
+
+### 異常處理 ([exceptions/](mdc:Tool/core/exceptions/))
+
+**異常類層次**:
+- `V2PException`: 基礎異常類
+  - `ConfigError`: 配置相關錯誤
+  - `FileError`: 文件操作錯誤
+  - `ConversionError`: 轉換過程錯誤
+
+**錯誤處理器** ([error_handler.py](mdc:Tool/core/error_handler.py)):
+- 統一的錯誤處理邏輯
+- 日誌記錄
+- UI 友好的錯誤訊息
+
+### 日誌系統 ([logger.py](mdc:Tool/core/logger.py))
+
+**功能**:
+- 按日期分割日誌檔案（v2p_YYYYMMDD.log）
+- 多級別日誌（DEBUG, INFO, WARNING, ERROR）
+- 同時輸出到控制台和檔案
+- UTF-8 編碼支援
+
+## 外部工具整合
+
+### FFmpeg
+- **用途**: 視頻解碼和影格提取
+- **調用位置**: [video.py](mdc:Tool/core/video.py) 的 `extract_frames()`
+- **命令範例**: 
+  ```bash
+  ffmpeg -i input.mp4 -vf fps=24 -frame_pts 1 -q:v 5 output_%d.png
+  ```
+
+### TexturePacker
+- **用途**: 將影格序列打包成材質集
+- **調用位置**: [video.py](mdc:Tool/core/video.py) 的 `process_video()`
+- **輸出格式**: Cocos2d-x plist 格式
+- **關鍵參數**:
+  - `--format cocos2d`: 輸出格式
+  - `--multipack`: 支援多個材質集
+  - `--algorithm MaxRects`: 打包演算法
+  - `--max-width/height`: 材質大小限制
+
+### TinyPNG API
+- **用途**: 進階圖像壓縮
+- **調用位置**: [video.py](mdc:Tool/core/video.py) 的 `compress_png_with_tinypng()`
+- **支援格式**: PNG, JPG
+- **需求**: API 金鑰（在設定中配置）
+
+## Lua 整合層
+
+### AnimationLoader ([AnimationLoader.lua](mdc:Lua/AnimationLoader.lua))
+
+**功能**:
+- 載入 plist 材質集
+- 創建 Cocos2d-x 動畫精靈
+- 動畫快取管理
+- 預載和資源釋放
+
+**主要 API**:
+- `setBasePath()`: 設定動畫資源路徑
+- `createAnimatedSprite()`: 創建動畫精靈
+- `createAnimation()`: 創建動畫物件
+- `clearCache()`: 清除快取
+- `preloadAnimations()`: 預載動畫
+
+## 資料流
+
+### 轉換流程資料流
+```
+使用者上傳 MP4
+    ↓
+UI 收集參數 (FPS, 材質大小等)
+    ↓
+ConfigManager 提供工具路徑
+    ↓
+process_video() 協調處理
+    ↓
+extract_frames() - FFmpeg 提取影格到 temp/
+    ↓
+TexturePacker 打包到 videos/v2p_{name}/
+    ↓
+[可選] TinyPNG 壓縮圖片
+    ↓
+save_metadata() 保存元數據
+    ↓
+清理 temp/ 臨時檔案
+    ↓
+UI 顯示完成訊息
+```
+
+### 配置流程資料流
+```
+啟動時 → load_config() → YAML 檔案
+         ↓
+      ConfigManager 記憶體
+         ↓
+使用者修改設定 → save_config() → YAML 檔案
+```
+
+## 目錄結構
+
+```
+Tool/
+├── v2p.py                      # 主程式入口
+├── version.py                  # 版本資訊
+├── config.yaml                 # 工具配置
+├── preferences.json            # 使用者偏好
+├── core/                       # 核心模組
+│   ├── config.py
+│   ├── video.py
+│   ├── file_utils.py
+│   ├── logger.py
+│   ├── error_handler.py
+│   └── exceptions/             # 異常定義
+├── ui/                         # UI 模組
+│   ├── manager.py
+│   ├── styles.py
+│   └── tabs/                   # 功能頁籤
+├── ffmpeg/                     # FFmpeg 執行檔
+├── log/                        # 日誌檔案
+├── temp/                       # 臨時檔案
+└── videos/                     # 輸出目錄
+```
+
+## 設計原則
+
+1. **職責分離**: UI 層不直接處理業務邏輯
+2. **配置驅動**: 所有工具路徑和參數可配置
+3. **錯誤優先**: 完整的異常處理和日誌記錄
+4. **使用者友好**: 清晰的錯誤訊息和操作提示
+5. **模組化**: 各模組可獨立測試和維護

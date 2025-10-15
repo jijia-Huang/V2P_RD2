@@ -1,0 +1,76 @@
+---
+alwaysApply: true
+---
+
+# V2P 工具專案總覽
+
+## 專案目的
+
+V2P（Video to Plist for Cocos2d-x）是一個桌面工具，用於將 MP4 視頻檔案轉換為 Cocos2d-x 遊戲引擎可用的 plist 格式動畫序列。
+
+## 核心功能
+
+1. **視頻轉換**: 將 MP4 視頻提取為影格序列
+2. **材質打包**: 使用 TexturePacker 將影格打包成優化的材質集
+3. **格式支援**: 支援 PNG 和 JPG 輸出格式
+4. **圖像壓縮**: 整合 TinyPNG API 進行高效壓縮
+5. **Web 介面**: 基於 Gradio 的現代化操作介面
+6. **Lua 整合**: 提供完整的 Cocos2d-x Lua 動畫加載器
+
+## 技術棧
+
+- **語言**: Python 3.8+
+- **UI 框架**: Gradio 5.16.2
+- **配置管理**: PyYAML
+- **圖像處理**: Pillow
+- **外部工具**:
+  - FFmpeg: 視頻處理和影格提取
+  - TexturePacker: 材質集打包
+  - TinyPNG API: 圖像壓縮
+
+## 專案入口
+
+主程式入口點是 [v2p.py](mdc:Tool/v2p.py)，它負責：
+- 命令列參數解析
+- 日誌系統初始化
+- 配置管理器創建
+- UI 啟動和 Gradio 服務器運行
+
+## 主要模組
+
+### 核心層（core/）
+- [config.py](mdc:Tool/core/config.py): 配置管理（YAML/JSON）
+- [video.py](mdc:Tool/core/video.py): 視頻處理核心邏輯
+- [file_utils.py](mdc:Tool/core/file_utils.py): 文件操作工具
+- [logger.py](mdc:Tool/core/logger.py): 日誌系統
+- exceptions/: 自定義異常體系
+
+### UI 層（ui/）
+- [manager.py](mdc:Tool/ui/manager.py): UI 管理器
+- tabs/: 功能頁籤模組
+  - [main_tab.py](mdc:Tool/ui/tabs/main_tab.py): 轉換功能
+  - [settings_tab.py](mdc:Tool/ui/tabs/settings_tab.py): 工具設定
+  - [output_tab.py](mdc:Tool/ui/tabs/output_tab.py): 輸出管理
+  - [manage_tab.py](mdc:Tool/ui/tabs/manage_tab.py): 文件管理
+
+### Lua 層
+- [AnimationLoader.lua](mdc:Lua/AnimationLoader.lua): Cocos2d-x 動畫加載器
+- [AnimationLoader_使用指南.md](mdc:Lua/AnimationLoader_使用指南.md): 使用文檔
+
+## 版本資訊
+
+當前版本資訊位於 [version.py](mdc:Tool/version.py)。
+
+## 輸出結構
+
+轉換後的動畫資源會輸出到 `Tool/videos/v2p_{動畫名稱}/` 目錄，包含：
+- `*.plist`: Cocos2d-x 材質集描述檔
+- `*.png` 或 `*.jpg`: 打包後的材質圖片
+- `*_metadata.json`: 動畫元數據（FPS、尺寸等）
+
+## 開發約定
+
+- 所有 Python 檔案使用 UTF-8 編碼
+- 使用繁體中文作為註釋和日誌語言
+- 錯誤處理使用自定義異常類（見 core/exceptions/）
+- 日誌記錄使用統一的 logger 模組
