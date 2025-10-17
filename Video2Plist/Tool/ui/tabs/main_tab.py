@@ -61,6 +61,21 @@ def create_main_tab(config_manager):
                             max_width_slider = gr.Slider(512, 8192, value=config_manager.get_preference("last_max_width", 2048), step=512, label="Max Texture Width")
                             max_height_slider = gr.Slider(512, 8192, value=config_manager.get_preference("last_max_height", 2048), step=512, label="Max Texture Height")
                         
+                        # 打包器選擇
+                        with gr.Row():
+                            with gr.Column(scale=2):
+                                packer_choice = gr.Radio(
+                                    choices=["自動選擇", "TexturePacker", "Python 打包器"],
+                                    value=config_manager.get_preference("last_packer_choice", "自動選擇"),
+                                    label="材質打包器",
+                                    info="自動選擇：優先使用 TexturePacker，未設定時使用 Python 打包器"
+                                )
+                            with gr.Column(scale=1):
+                                packer_status = gr.Markdown(
+                                    value="",
+                                    elem_classes=["packer-status"]
+                                )
+                        
                         gr.Markdown("### 📝壓縮設定")
                         use_tinypng = gr.Checkbox(
                             label="使用 TinyPNG 壓縮 PNG",
@@ -646,8 +661,32 @@ def create_main_tab(config_manager):
             else:
                 return gr.update(interactive=True, info="提取影格後自動去背（僅 PNG 格式支援，在「去背預覽」頁面調整參數）")
         
+        def on_packer_choice_change(packer_choice_value):
+            """當打包器選擇改變時更新狀態顯示"""
+            try:
+                if packer_choice_value == "自動選擇":
+                    # 檢查 TexturePacker 是否可用
+                    tp_path = config_manager.get_texture_packer_path()
+                    if tp_path and os.path.exists(tp_path):
+                        return "🔧 將使用 TexturePacker"
+                    else:
+                        return "🐍 將使用 Python 打包器"
+                elif packer_choice_value == "TexturePacker":
+                    tp_path = config_manager.get_texture_packer_path()
+                    if tp_path and os.path.exists(tp_path):
+                        return "✅ TexturePacker 可用"
+                    else:
+                        return "❌ TexturePacker 未設定或不存在"
+                elif packer_choice_value == "Python 打包器":
+                    return "🐍 將使用 Python 打包器"
+                else:
+                    return ""
+            except Exception as e:
+                logging.error(f"更新打包器狀態失敗: {str(e)}")
+                return "❓ 狀態未知"
+        
         def on_convert_click(video, fps, output_name, max_width, max_height, output_format, quality, use_tinypng_compression,
-                            enable_resize, lock_aspect, aspect_w, aspect_h, frame_w, frame_h, resize_mode_value,
+                            packer_choice_value, enable_resize, lock_aspect, aspect_w, aspect_h, frame_w, frame_h, resize_mode_value,
                             enable_bg_removal_value, bg_removal_tolerance_value):
             """當點擊轉換按鈕時的處理"""
             try:
@@ -659,6 +698,7 @@ def create_main_tab(config_manager):
                     "last_format": output_format,
                     "last_quality": quality,
                     "last_use_tinypng": use_tinypng_compression,
+                    "last_packer_choice": packer_choice_value,
                     "last_enable_resize": enable_resize,
                     "last_lock_aspect": lock_aspect,
                     "last_aspect_width": aspect_w,
@@ -682,6 +722,7 @@ def create_main_tab(config_manager):
                     quality,
                     use_tinypng=use_tinypng_compression,
                     tinypng_api_key=config_manager.get_tinypng_api_key(),
+                    packer_choice=packer_choice_value,
                     enable_resize=enable_resize,
                     target_width=int(frame_w) if enable_resize else None,
                     target_height=int(frame_h) if enable_resize else None,
@@ -790,6 +831,13 @@ def create_main_tab(config_manager):
             outputs=[enable_bg_removal]
         )
         
+        # 打包器選擇變更事件
+        packer_choice.change(
+            fn=on_packer_choice_change,
+            inputs=[packer_choice],
+            outputs=[packer_status]
+        )
+        
         process_button.click(
             fn=on_convert_click,
             inputs=[
@@ -801,6 +849,7 @@ def create_main_tab(config_manager):
                 format_dropdown,
                 quality_slider,
                 use_tinypng,
+                packer_choice,
                 enable_frame_resize,
                 lock_aspect_ratio,
                 aspect_width,
@@ -830,6 +879,8 @@ def create_main_tab(config_manager):
             outputs=[output_path_display]
         )
 
+        # 初始化打包器狀態（在返回後由 UI 管理器處理）
+        
         # 返回需要在其他地方使用的元件
         return {
             "mp4_file": mp4_file,
@@ -844,5 +895,7 @@ def create_main_tab(config_manager):
             "output_path_display": output_path_display,
             "process_button": process_button,
             "enable_bg_removal": enable_bg_removal,
-            "bg_removal_tolerance_display": bg_removal_tolerance_display
+            "bg_removal_tolerance_display": bg_removal_tolerance_display,
+            "packer_choice": packer_choice,
+            "packer_status": packer_status
         } 

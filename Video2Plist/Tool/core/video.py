@@ -344,6 +344,7 @@ def process_video(mp4_file,
                   quality=5,
                   use_tinypng=False,
                   tinypng_api_key=None,
+                  packer_choice="自動選擇",
                   enable_resize=False,
                   target_width=None,
                   target_height=None,
@@ -483,46 +484,39 @@ def process_video(mp4_file,
             if enable_bg_removal and output_format.upper() != "PNG":
                 logging.warning(f"輸出格式為 {output_format}，跳過去背處理（僅支援 PNG）")
 
-        # 記錄 TexturePacker 處理
-        logging.info("開始執行 TexturePacker 打包")
-        tp_cmd = [
-            texture_packer_path, 
-            "--data", os.path.join(output_dir, f"{output_name}_{{n}}.plist"), 
-            "--format", "cocos2d", 
-            "--texture-format", output_format.lower(), 
-            "--png-opt-level", "2", 
-            "--sheet", os.path.join(output_dir, f"{output_name}_{{n}}.{output_format.lower()}"), 
-            "--max-width", str(max_width), 
-            "--max-height", str(max_height), 
-            "--size-constraints", "POT", 
-            "--multipack", 
-            "--algorithm", "MaxRects", 
-            "--maxrects-heuristics", "Best", 
-            "--trim-mode", "None",
-            "--opt", "RGBA8888" if output_format == "PNG" else "RGB888", 
-            "--extrude", "0", 
-            "--disable-auto-alias", 
-            "--shape-padding", "0", 
-            "--border-padding","0", 
-            "--disable-clean-transparency", 
-            "--basic-sort-by", "Name", 
-            frames_dir
-        ]
-
-        try:
-            result = subprocess.run(tp_cmd, check=True, capture_output=True, text=True, encoding='utf-8', errors='ignore')
-            logging.info(f"TexturePacker 執行成功：{result.stdout}")
-        except subprocess.CalledProcessError as e:
-            logging.error(f"TexturePacker 命令：{' '.join(tp_cmd)}")
-            logging.error(f"TexturePacker 錯誤輸出：{e.stderr}")
-            logging.error(f"TexturePacker 標準輸出：{e.stdout}")
-            logging.error(f"影格目錄內容：{os.listdir(frames_dir) if os.path.exists(frames_dir) else '目錄不存在'}")
-            raise ConversionError("TexturePacker 執行失敗", details=f"stderr: {e.stderr}\nstdout: {e.stdout}\ncmd: {' '.join(tp_cmd)}")
-
-        # 計算 plist 數量
-        plist_count = len(glob.glob(os.path.join(output_dir, f"{output_name}*.plist")))
-        if plist_count == 0:
-            raise ConversionError("沒有生成任何 plist 檔案")
+        # 根據使用者選擇決定使用哪個打包器
+        logging.info(f"打包器選擇: {packer_choice}")
+        
+        if packer_choice == "TexturePacker":
+            # 強制使用 TexturePacker
+            if not texture_packer_path or not os.path.exists(texture_packer_path):
+                raise ConfigError("TexturePacker 未設定或不存在，請在設定頁面配置 TexturePacker 路徑")
+            logging.info("使用 TexturePacker 進行打包")
+            plist_count = _process_with_texturepacker(
+                texture_packer_path, frames_dir, output_dir, output_name, 
+                max_width, max_height, output_format, progress
+            )
+        elif packer_choice == "Python 打包器":
+            # 強制使用 Python 打包器
+            logging.info("使用 Python 打包器進行打包")
+            plist_count = _process_with_python_packer(
+                frames_dir, output_dir, output_name, 
+                max_width, max_height, output_format, progress
+            )
+        else:
+            # 自動選擇（預設行為）
+            if texture_packer_path and os.path.exists(texture_packer_path):
+                logging.info("自動選擇：使用 TexturePacker 進行打包")
+                plist_count = _process_with_texturepacker(
+                    texture_packer_path, frames_dir, output_dir, output_name, 
+                    max_width, max_height, output_format, progress
+                )
+            else:
+                logging.info("自動選擇：TexturePacker 未設定，使用 Python 打包器進行打包")
+                plist_count = _process_with_python_packer(
+                    frames_dir, output_dir, output_name, 
+                    max_width, max_height, output_format, progress
+                )
 
         # 保存設定資訊
         settings = {
@@ -577,7 +571,7 @@ def process_video(mp4_file,
         if temp_folder and os.path.exists(temp_folder):
             try:
                 import shutil
-                shutil.rmtree(temp_folder, ignore_errors=True)
+                # shutil.rmtree(temp_folder, ignore_errors=True)
                 logging.info(f"已清理轉換臨時目錄：{temp_folder}")
             except Exception as e:
                 logging.error(f"清理暫存檔案失敗：{str(e)}")
@@ -746,3 +740,101 @@ def extract_frames(video_path, output_folder, fps, ffmpeg_path, output_name, out
         raise
     except Exception as e:
         raise ConversionError("影格提取過程發生錯誤", details=str(e))
+
+
+def _process_with_texturepacker(texture_packer_path, frames_dir, output_dir, output_name, 
+                               max_width, max_height, output_format, progress):
+    """使用 TexturePacker 進行打包"""
+    logging.info("開始執行 TexturePacker 打包")
+    
+    tp_cmd = [
+        texture_packer_path, 
+        "--data", os.path.join(output_dir, f"{output_name}_{{n}}.plist"), 
+        "--format", "cocos2d", 
+        "--texture-format", output_format.lower(), 
+        "--png-opt-level", "2", 
+        "--sheet", os.path.join(output_dir, f"{output_name}_{{n}}.{output_format.lower()}"), 
+        "--max-width", str(max_width), 
+        "--max-height", str(max_height), 
+        "--size-constraints", "POT", 
+        "--multipack", 
+        "--algorithm", "MaxRects", 
+        "--maxrects-heuristics", "Best", 
+        "--trim-mode", "None",
+        "--opt", "RGBA8888" if output_format == "PNG" else "RGB888", 
+        "--extrude", "0", 
+        "--disable-auto-alias", 
+        "--shape-padding", "0", 
+        "--border-padding","0", 
+        "--disable-clean-transparency", 
+        "--basic-sort-by", "Name", 
+        frames_dir
+    ]
+
+    try:
+        result = subprocess.run(tp_cmd, check=True, capture_output=True, text=True, encoding='utf-8', errors='ignore')
+        logging.info(f"TexturePacker 執行成功：{result.stdout}")
+    except subprocess.CalledProcessError as e:
+        logging.error(f"TexturePacker 命令：{' '.join(tp_cmd)}")
+        logging.error(f"TexturePacker 錯誤輸出：{e.stderr}")
+        logging.error(f"TexturePacker 標準輸出：{e.stdout}")
+        logging.error(f"影格目錄內容：{os.listdir(frames_dir) if os.path.exists(frames_dir) else '目錄不存在'}")
+        raise ConversionError("TexturePacker 執行失敗", details=f"stderr: {e.stderr}\nstdout: {e.stdout}\ncmd: {' '.join(tp_cmd)}")
+
+    # 計算 plist 數量
+    plist_count = len(glob.glob(os.path.join(output_dir, f"{output_name}*.plist")))
+    if plist_count == 0:
+        raise ConversionError("沒有生成任何 plist 檔案")
+    
+    logging.info(f"TexturePacker 完成，生成 {plist_count} 個 plist 檔案")
+    return plist_count
+
+
+def _process_with_python_packer(frames_dir, output_dir, output_name, 
+                               max_width, max_height, output_format, progress):
+    """使用 Python 打包器進行打包"""
+    try:
+        from .python_packer import PythonTexturePacker
+        
+        logging.info("開始執行 Python 打包器")
+        progress(0.6, desc="正在使用 Python 打包器打包...")
+        
+        # 獲取所有影格檔案
+        frame_pattern = os.path.join(frames_dir, f"*.{output_format.lower()}")
+        image_paths = sorted(glob.glob(frame_pattern))
+        
+        if not image_paths:
+            # 嘗試其他格式
+            for ext in ['png', 'jpg', 'jpeg']:
+                if ext != output_format.lower():
+                    frame_pattern = os.path.join(frames_dir, f"*.{ext}")
+                    image_paths = sorted(glob.glob(frame_pattern))
+                    if image_paths:
+                        logging.info(f"找到 {len(image_paths)} 個 {ext.upper()} 影格檔案")
+                        break
+        
+        if not image_paths:
+            raise ConversionError(f"在 {frames_dir} 中找不到任何影格檔案")
+        
+        logging.info(f"找到 {len(image_paths)} 個影格檔案")
+        
+        # 創建 Python 打包器
+        packer = PythonTexturePacker(max_width, max_height, output_format)
+        
+        # 執行打包
+        result = packer.pack_images(image_paths, output_dir, output_name)
+        
+        if not result["success"]:
+            raise ConversionError("Python 打包器執行失敗")
+        
+        plist_count = result["sheets_count"]
+        logging.info(f"Python 打包器完成，生成 {plist_count} 個材質集，耗時 {result['elapsed_time']:.2f}s")
+        
+        return plist_count
+        
+    except ImportError as e:
+        logging.error(f"無法導入 Python 打包器模組：{str(e)}")
+        raise ConversionError("Python 打包器模組導入失敗", details=str(e))
+    except Exception as e:
+        logging.error(f"Python 打包器執行失敗：{str(e)}", exc_info=True)
+        raise ConversionError("Python 打包器執行失敗", details=str(e))

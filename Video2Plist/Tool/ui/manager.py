@@ -75,6 +75,38 @@ class UIManager:
                     ]
                 )
                 
+                # 初始化打包器狀態
+                if "packer_choice" in main_components and "packer_status" in main_components:
+                    demo.load(
+                        fn=self._init_packer_status,
+                        inputs=[main_components["packer_choice"]],
+                        outputs=[main_components["packer_status"]]
+                    )
+                
+                # 同步去背設定值（從去背預覽頁面）
+                def sync_bg_removal_tolerance():
+                    """從配置檔案同步去背容差值"""
+                    tolerance = self.config_manager.get_preference("last_bg_removal_tolerance", 10)
+                    return gr.update(value=tolerance)
+                
+                if "bg_removal_tolerance_display" in main_components:
+                    # 頁面載入時同步一次
+                    demo.load(
+                        fn=sync_bg_removal_tolerance,
+                        outputs=[main_components["bg_removal_tolerance_display"]]
+                    )
+                    
+                    # 當去背預覽頁籤中的容差值改變時，立即同步到轉換頁籤
+                    if "bg_removal_tolerance" in bg_removal_components:
+                        bg_removal_components["bg_removal_tolerance"].release(
+                            fn=sync_bg_removal_tolerance,
+                            outputs=[main_components["bg_removal_tolerance_display"]]
+                        )
+                        bg_removal_components["bg_removal_tolerance"].change(
+                            fn=sync_bg_removal_tolerance,
+                            outputs=[main_components["bg_removal_tolerance_display"]]
+                        )
+                
                 # 檢查設定並自動切換頁面
                 def check_and_switch():
                     if (self.config_manager.get_ffmpeg_path() and 
@@ -116,6 +148,30 @@ class UIManager:
             prefs.get("auto_clean", True),
             prefs.get("remember_settings", True)
         ]
+    
+    def _init_packer_status(self, packer_choice_value):
+        """初始化打包器狀態顯示"""
+        try:
+            if packer_choice_value == "自動選擇":
+                # 檢查 TexturePacker 是否可用
+                tp_path = self.config_manager.get_texture_packer_path()
+                if tp_path and os.path.exists(tp_path):
+                    return "🔧 將使用 TexturePacker"
+                else:
+                    return "🐍 將使用 Python 打包器"
+            elif packer_choice_value == "TexturePacker":
+                tp_path = self.config_manager.get_texture_packer_path()
+                if tp_path and os.path.exists(tp_path):
+                    return "✅ TexturePacker 可用"
+                else:
+                    return "❌ TexturePacker 未設定或不存在"
+            elif packer_choice_value == "Python 打包器":
+                return "🐍 將使用 Python 打包器"
+            else:
+                return ""
+        except Exception as e:
+            logging.error(f"初始化打包器狀態失敗: {str(e)}")
+            return "❓ 狀態未知"
     
     def get_component(self, name):
         """獲取 UI 元件"""
