@@ -1,8 +1,8 @@
 {
   "last_version": "1.1.0",
-  "last_fps": 24,
-  "last_max_width": 512,
-  "last_max_height": 512,
+  "last_fps": 18,
+  "last_max_width": 1024,
+  "last_max_height": 1024,
   "last_format": "PNG",
   "last_quality": 1,
   "last_use_tinypng": false,
@@ -12,5 +12,14 @@
   "last_aspect_height": 16,
   "last_frame_width": 240,
   "last_frame_height": 427,
-  "last_resize_mode": "pad_transparent"
+  "last_resize_mode": "pad_transparent",
+  "last_bg_removal_enabled": true,
+  "last_bg_removal_tolerance": 2,
+  "last_video_path": "C:\\Users\\jijiahuang\\AppData\\Local\\Temp\\gradio\\1f6822a054ec5a510f854f89124147fcae789359279b925bed6d40acda0ba8d3\\裁切.mp4",
+  "preview_frames_dir": "D:\\Tool\\newFeature\\SouthAsia-Share-Tools\\V2P_RD2\\Video2Plist\\Tool\\temp\\v2p_150\\frames",
+  "preview_frame_count": 92,
+  "preview_fps": 18,
+  "preview_video_path": "C:\\Users\\jijiahuang\\AppData\\Local\\Temp\\gradio\\1f6822a054ec5a510f854f89124147fcae789359279b925bed6d40acda0ba8d3\\裁切.mp4",
+  "preview_update_time": 1760687095.6172237,
+  "preview_temp_folder": "D:\\Tool\\newFeature\\SouthAsia-Share-Tools\\V2P_RD2\\Video2Plist\\Tool\\temp\\v2p_150"
 }

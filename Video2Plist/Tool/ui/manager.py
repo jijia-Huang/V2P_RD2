@@ -9,6 +9,7 @@ from .styles import CSS, load_styles
 from .tabs import (
     create_settings_tab,
     create_main_tab,
+    create_bg_removal_tab,
     create_output_tab,
     create_manage_tab
 )
@@ -44,6 +45,9 @@ class UIManager:
                     logging.debug("建立主要功能頁籤")
                     main_components = create_main_tab(self.config_manager)
                     
+                    logging.debug("建立去背預覽頁籤")
+                    bg_removal_components = create_bg_removal_tab(self.config_manager)
+                    
                     logging.debug("建立輸出頁籤")
                     output_components = create_output_tab(self.config_manager)
                     
@@ -53,6 +57,7 @@ class UIManager:
                 # 儲存元件引用
                 self.components.update(settings_components)
                 self.components.update(main_components)
+                self.components.update(bg_removal_components)
                 self.components.update(output_components)
                 self.components.update(manage_components)
                 

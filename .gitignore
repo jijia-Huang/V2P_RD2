@@ -181,3 +181,4 @@ cython_debug/
 .cursorindexingignore
 /Video2Plist/Tool/videos
 /Video2Plist/Tool/ffmpeg
+/Video2Plist/Tool

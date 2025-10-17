@@ -348,6 +348,9 @@ def process_video(mp4_file,
                   target_width=None,
                   target_height=None,
                   resize_mode="stretch",
+                  enable_bg_removal=False,
+                  bg_removal_tolerance=10,
+                  config_manager=None,
                   ui_manager=None,
                   progress=gr.Progress()):
     """處理影片轉換
@@ -368,6 +371,8 @@ def process_video(mp4_file,
         target_width: Frame 目標寬度
         target_height: Frame 目標高度
         resize_mode: 縮放模式
+        enable_bg_removal: 是否啟用去背處理
+        bg_removal_tolerance: 去背容差值
         ui_manager: UI 管理器
         progress: Gradio Progress 物件
     
@@ -419,6 +424,7 @@ def process_video(mp4_file,
 
         # 記錄影格提取
         frames_dir = os.path.join(temp_folder, "frames")
+        
         logging.info(f"開始提取影格到：{frames_dir}")
         frame_count = extract_frames(
             mp4_file.name, frames_dir, fps, ffmpeg_path, output_name, output_format, quality,
@@ -428,6 +434,54 @@ def process_video(mp4_file,
             resize_mode=resize_mode
         )
         logging.info(f"成功提取 {frame_count} 個影格")
+
+        # 保存影格目錄資訊供去背預覽使用（更新為當前的工作影格）
+        config_manager.save_preferences({
+            "preview_frames_dir": frames_dir,
+            "preview_frame_count": frame_count,
+            "preview_fps": fps,
+            "preview_video_path": mp4_file.name,
+            "preview_temp_folder": temp_folder  # 保存臨時目錄路徑，供後續清理
+        })
+        
+        logging.info(f"已更新影格目錄資訊：{frames_dir}")
+
+        # 去背處理
+        if enable_bg_removal and output_format.upper() == "PNG":
+            logging.info(f"開始批次去背處理（容差：{bg_removal_tolerance}）...")
+            from .filter import process_frames_batch
+            
+            progress(0.3, desc="正在去背處理...")
+            
+            # 檢查去背前的影格
+            frame_files_before = glob.glob(os.path.join(frames_dir, "*.png"))
+            logging.info(f"去背前影格數量：{len(frame_files_before)}")
+            
+            try:
+                result = process_frames_batch(
+                    frames_dir,
+                    bg_color=None,
+                    tolerance=bg_removal_tolerance,
+                    output_dir=frames_dir,  # 覆蓋原影格
+                    auto_detect=True,
+                    progress_callback=None
+                )
+                
+                # 檢查去背後的影格
+                frame_files_after = glob.glob(os.path.join(frames_dir, "*.png"))
+                logging.info(f"去背後影格數量：{len(frame_files_after)}")
+                
+                if result['failed'] > 0:
+                    logging.warning(f"部分影格去背失敗：{result['failed']}/{result['total']}")
+                
+                logging.info(f"去背完成：成功 {result['success']}/{result['total']} 幀")
+            except Exception as e:
+                logging.error(f"去背處理失敗：{str(e)}", exc_info=True)
+                # 去背失敗不應該阻止整個流程，繼續處理
+                logging.warning("去背處理失敗，將使用原始影格繼續處理")
+        else:
+            if enable_bg_removal and output_format.upper() != "PNG":
+                logging.warning(f"輸出格式為 {output_format}，跳過去背處理（僅支援 PNG）")
 
         # 記錄 TexturePacker 處理
         logging.info("開始執行 TexturePacker 打包")
@@ -457,8 +511,13 @@ def process_video(mp4_file,
 
         try:
             result = subprocess.run(tp_cmd, check=True, capture_output=True, text=True, encoding='utf-8', errors='ignore')
+            logging.info(f"TexturePacker 執行成功：{result.stdout}")
         except subprocess.CalledProcessError as e:
-            raise ConversionError("TexturePacker 執行失敗", details=e.stderr)
+            logging.error(f"TexturePacker 命令：{' '.join(tp_cmd)}")
+            logging.error(f"TexturePacker 錯誤輸出：{e.stderr}")
+            logging.error(f"TexturePacker 標準輸出：{e.stdout}")
+            logging.error(f"影格目錄內容：{os.listdir(frames_dir) if os.path.exists(frames_dir) else '目錄不存在'}")
+            raise ConversionError("TexturePacker 執行失敗", details=f"stderr: {e.stderr}\nstdout: {e.stdout}\ncmd: {' '.join(tp_cmd)}")
 
         # 計算 plist 數量
         plist_count = len(glob.glob(os.path.join(output_dir, f"{output_name}*.plist")))
@@ -479,7 +538,10 @@ def process_video(mp4_file,
             "original_size": f"{original_width}x{original_height}" if original_width and original_height else "",
             "frame_resize_enabled": enable_resize,
             "frame_size": f"{target_width}x{target_height}" if enable_resize and target_width and target_height else (f"{original_width}x{original_height}" if original_width and original_height else ""),
-            "resize_mode": resize_mode if enable_resize else ""
+            "resize_mode": resize_mode if enable_resize else "",
+            # 去背相關資訊
+            "bg_removal_enabled": enable_bg_removal,
+            "bg_removal_tolerance": bg_removal_tolerance if enable_bg_removal else None
         }
 
         # 如果啟用了 TinyPNG 壓縮，則進行壓縮
@@ -511,10 +573,12 @@ def process_video(mp4_file,
         return f"❌ 處理失敗：{str(e)}"
 
     finally:
+        # 轉換完成後清理臨時目錄（預覽影格在獨立目錄，不受影響）
         if temp_folder and os.path.exists(temp_folder):
             try:
+                import shutil
                 shutil.rmtree(temp_folder, ignore_errors=True)
-                logging.info(f"清理臨時目錄：{temp_folder}")
+                logging.info(f"已清理轉換臨時目錄：{temp_folder}")
             except Exception as e:
                 logging.error(f"清理暫存檔案失敗：{str(e)}")
 

@@ -1,12 +1,13 @@
 """
 主要轉換頁面
 """
+import os
+import logging
 import gradio as gr
 from core.video import get_video_info, process_video
 from core.file_utils import get_application_path
 from core.error_handler import handle_error
 from core.exceptions import ConfigError, FileError, ConversionError
-import os
 
 def create_main_tab(config_manager):
     """建立主要功能頁籤"""
@@ -48,6 +49,12 @@ def create_main_tab(config_manager):
                                 info="數值越小品質越好（1-31，建議值：5）",
                                 scale=2,
                             )
+                            
+                        # FPS 狀態顯示
+                        fps_status = gr.Markdown(
+                            value="ⓘ 修改 FPS 會自動重新提取影格供預覽",
+                            elem_classes=["fps-status"]
+                        )
                                 
                         gr.Markdown("### 📝材質設定")
                         with gr.Row():
@@ -152,6 +159,27 @@ def create_main_tab(config_manager):
                                 value="ⓘ 提示：請先上傳影片",
                                 elem_classes=["frame-size-info"]
                             )
+                        
+                        gr.Markdown("### 🎨 去背設定")
+                        enable_bg_removal = gr.Checkbox(
+                            label="啟用去背處理",
+                            value=config_manager.get_preference("last_bg_removal_enabled", False),
+                            info="提取影格後自動去背（僅 PNG 格式支援，在「去背預覽」頁面調整參數）"
+                        )
+                        
+                        bg_removal_tolerance_display = gr.Number(
+                            label="容差值（在「去背預覽」頁面調整）",
+                            value=config_manager.get_preference("last_bg_removal_tolerance", 10),
+                            interactive=False,
+                            precision=0
+                        )
+                        
+                        gr.Markdown("""
+                        💡 **說明**：
+                        - 去背功能只對 PNG 格式有效
+                        - 在「去背預覽」頁面調整容差值並預覽效果
+                        - 自動從影格四個角落檢測背景顏色
+                        """)
                 
             # 右側：預覽
             with gr.Column(scale=1):
@@ -374,21 +402,158 @@ def create_main_tab(config_manager):
                 gr.update(value=height)  # frame_height_slider
             ]
         
+        def cleanup_temp_files():
+            """清理預覽影格檔案（不清理轉換臨時檔案）"""
+            try:
+                from core.file_utils import get_application_path
+                
+                # 只清理預覽影格目錄（完全獨立的目錄）
+                preview_base = os.path.join(get_application_path(), "preview")
+                if os.path.exists(preview_base):
+                    import shutil
+                    shutil.rmtree(preview_base, ignore_errors=True)
+                    logging.info(f"已清理預覽影格目錄：{preview_base}")
+                
+                # 清除 config 中的預覽資訊
+                config_manager.save_preferences({
+                    "preview_frames_dir": "",
+                    "preview_frame_count": 0,
+                    "preview_fps": 24,
+                    "preview_video_path": "",
+                    "preview_update_time": 0
+                })
+                
+                logging.info("預覽檔案清理完成")
+            except Exception as e:
+                logging.error(f"清理預覽檔案失敗：{str(e)}")
+
+        def cleanup_all_temp_files():
+            """清理所有臨時檔案（包括預覽和轉換）"""
+            try:
+                from core.file_utils import get_application_path
+                
+                # 清理預覽影格目錄
+                preview_base = os.path.join(get_application_path(), "preview")
+                if os.path.exists(preview_base):
+                    import shutil
+                    shutil.rmtree(preview_base, ignore_errors=True)
+                    logging.info(f"已清理預覽影格目錄：{preview_base}")
+                
+                # 清理所有轉換臨時目錄
+                temp_base = os.path.join(get_application_path(), "temp")
+                if os.path.exists(temp_base):
+                    import shutil
+                    for item in os.listdir(temp_base):
+                        item_path = os.path.join(temp_base, item)
+                        # 清理 v2p_ 開頭的目錄（轉換臨時目錄）
+                        if os.path.isdir(item_path) and item.startswith("v2p_"):
+                            shutil.rmtree(item_path, ignore_errors=True)
+                            logging.info(f"已清理轉換臨時目錄：{item_path}")
+                
+                # 清除 config 中的預覽資訊
+                config_manager.save_preferences({
+                    "preview_frames_dir": "",
+                    "preview_frame_count": 0,
+                    "preview_fps": 24,
+                    "preview_video_path": "",
+                    "preview_update_time": 0
+                })
+                
+                logging.info("所有臨時檔案清理完成")
+            except Exception as e:
+                logging.error(f"清理臨時檔案失敗：{str(e)}")
+
         def update_preview(video):
-            """更新預覽"""
+            """更新預覽並提取影格"""
             try:
                 if not video:
+                    # 清除影片路徑和預覽資訊
+                    config_manager.save_preferences({
+                        "last_video_path": "",
+                        "preview_frames_dir": "",
+                        "preview_frame_count": 0
+                    })
                     return None, gr.update(value="ⓘ 提示：請先上傳影片")
-                # 只檢查檔案是否可用，不顯示詳細資訊
+                
+                # 檢查是否是新影片，如果是則清理所有舊檔案
+                current_video_path = config_manager.get_preference("last_video_path", "")
+                if current_video_path and current_video_path != video.name:
+                    logging.info(f"檢測到新影片，清理所有舊檔案：{current_video_path} → {video.name}")
+                    cleanup_all_temp_files()
+                
+                # 檢查檔案是否可用
                 get_video_info(video.name, config_manager.get_ffmpeg_path())
                 
-                # 獲取影片尺寸並更新提示
-                width, height = get_video_dimensions(video.name)
-                if width and height:
-                    return video.name, gr.update(value=f"ⓘ 原始尺寸：{width}x{height}")
+                # 保存影片路徑
+                config_manager.save_preferences({"last_video_path": video.name})
+                logging.info(f"已保存影片路徑：{video.name}")
                 
-                return video.name, gr.update(value="ⓘ 提示：無法讀取影片尺寸")
-            except Exception:
+                # 獲取影片尺寸
+                width, height = get_video_dimensions(video.name)
+                
+                # 立即提取影格供預覽使用
+                try:
+                    from core.video import extract_frames
+                    
+                    # 獲取當前 FPS 設定
+                    current_fps = config_manager.get_preference("last_fps", 24)
+                    
+                    # 創建完全獨立的預覽目錄（不在 temp 下）
+                    import hashlib
+                    video_hash = hashlib.md5(video.name.encode()).hexdigest()[:8]
+                    preview_base = os.path.join(get_application_path(), "preview")
+                    frames_dir = os.path.join(preview_base, f"bg_preview_{video_hash}")
+                    
+                    # 清理舊的預覽影格（只清理當前預覽目錄）
+                    if os.path.exists(frames_dir):
+                        import shutil
+                        shutil.rmtree(frames_dir, ignore_errors=True)
+                    
+                    os.makedirs(frames_dir, exist_ok=True)
+                    
+                    logging.info(f"開始提取影格供預覽：{video.name}，FPS={current_fps}")
+                    
+                    # 提取影格
+                    frame_count = extract_frames(
+                        video.name,
+                        frames_dir,
+                        current_fps,
+                        config_manager.get_ffmpeg_path(),
+                        "preview",
+                        output_format="PNG",
+                        quality=5
+                    )
+                    
+                    # 保存預覽資訊
+                    import time
+                    config_manager.save_preferences({
+                        "preview_frames_dir": frames_dir,
+                        "preview_frame_count": frame_count,
+                        "preview_fps": current_fps,
+                        "preview_video_path": video.name,
+                        "preview_update_time": time.time()  # 添加更新時間戳
+                    })
+                    
+                    logging.info(f"預覽影格提取完成：{frame_count} 個影格，已通知去背預覽頁面")
+                    
+                    # 更新提示資訊
+                    if width and height:
+                        info_text = f"ⓘ 原始尺寸：{width}x{height}\n✅ 已提取 {frame_count} 個影格供預覽"
+                    else:
+                        info_text = f"✅ 已提取 {frame_count} 個影格供預覽"
+                    
+                    return video.name, gr.update(value=info_text)
+                    
+                except Exception as e:
+                    logging.error(f"提取預覽影格失敗：{str(e)}")
+                    # 即使提取失敗，也不影響基本功能
+                    if width and height:
+                        return video.name, gr.update(value=f"ⓘ 原始尺寸：{width}x{height}\n⚠️ 預覽影格提取失敗")
+                    else:
+                        return video.name, gr.update(value="⚠️ 預覽影格提取失敗")
+                
+            except Exception as e:
+                logging.error(f"更新預覽失敗：{str(e)}")
                 return None, gr.update(value="ⓘ 提示：影片讀取失敗")
 
         def clear_inputs():
@@ -410,8 +575,80 @@ def create_main_tab(config_manager):
             output_dir = os.path.join(get_application_path(), "videos", output_name)
             return f"預訂輸出目錄：{output_dir}"
 
+        def on_fps_change(fps_value, current_video):
+            """當 FPS 改變時重新提取影格"""
+            try:
+                if not current_video:
+                    return "ⓘ 提示：請先上傳影片"
+                
+                # 檢查是否需要重新提取
+                current_preview_fps = config_manager.get_preference("preview_fps", 24)
+                if current_preview_fps == fps_value:
+                    # FPS 沒變，不需要重新提取
+                    frame_count = config_manager.get_preference("preview_frame_count", 0)
+                    if frame_count > 0:
+                        return f"ⓘ FPS={fps_value}，已有 {frame_count} 個預覽影格"
+                
+                # FPS 改變了，需要重新提取並清理所有臨時檔案
+                logging.info(f"FPS 改變：{current_preview_fps} → {fps_value}，重新提取影格")
+                
+                # 清理所有臨時檔案（包括轉換臨時檔案）
+                cleanup_all_temp_files()
+                
+                from core.video import extract_frames
+                
+                # 創建完全獨立的預覽目錄（不在 temp 下）
+                import hashlib
+                video_hash = hashlib.md5(current_video.encode()).hexdigest()[:8]
+                preview_base = os.path.join(get_application_path(), "preview")
+                frames_dir = os.path.join(preview_base, f"bg_preview_{video_hash}")
+                
+                # 清理舊的預覽影格（只清理當前預覽目錄）
+                if os.path.exists(frames_dir):
+                    import shutil
+                    shutil.rmtree(frames_dir, ignore_errors=True)
+                
+                os.makedirs(frames_dir, exist_ok=True)
+                
+                # 重新提取影格
+                frame_count = extract_frames(
+                    current_video,
+                    frames_dir,
+                    fps_value,
+                    config_manager.get_ffmpeg_path(),
+                    "preview",
+                    output_format="PNG",
+                    quality=5
+                )
+                
+                # 更新預覽資訊
+                import time
+                config_manager.save_preferences({
+                    "preview_frames_dir": frames_dir,
+                    "preview_frame_count": frame_count,
+                    "preview_fps": fps_value,
+                    "preview_video_path": current_video,
+                    "preview_update_time": time.time()  # 添加更新時間戳
+                })
+                
+                logging.info(f"FPS 更新完成：重新提取 {frame_count} 個影格，已通知去背預覽頁面")
+                
+                return f"✅ FPS 已更新為 {fps_value}，重新提取 {frame_count} 個影格"
+                
+            except Exception as e:
+                logging.error(f"FPS 更新失敗：{str(e)}")
+                return f"⚠️ FPS 更新失敗：{str(e)}"
+        
+        def on_format_change(output_format):
+            """當輸出格式改變時"""
+            if output_format == "JPG":
+                return gr.update(value=False, interactive=False, info="JPG 不支援透明度，已禁用去背")
+            else:
+                return gr.update(interactive=True, info="提取影格後自動去背（僅 PNG 格式支援，在「去背預覽」頁面調整參數）")
+        
         def on_convert_click(video, fps, output_name, max_width, max_height, output_format, quality, use_tinypng_compression,
-                            enable_resize, lock_aspect, aspect_w, aspect_h, frame_w, frame_h, resize_mode_value):
+                            enable_resize, lock_aspect, aspect_w, aspect_h, frame_w, frame_h, resize_mode_value,
+                            enable_bg_removal_value, bg_removal_tolerance_value):
             """當點擊轉換按鈕時的處理"""
             try:
                 # 儲存設定
@@ -428,12 +665,16 @@ def create_main_tab(config_manager):
                     "last_aspect_height": aspect_h,
                     "last_frame_width": frame_w,
                     "last_frame_height": frame_h,
-                    "last_resize_mode": resize_mode_value
+                    "last_resize_mode": resize_mode_value,
+                    "last_bg_removal_enabled": enable_bg_removal_value,
+                    "last_bg_removal_tolerance": bg_removal_tolerance_value
                 })
                 
                 # 加上 v2p_ 前綴
                 final_name = f"v2p_{output_name}" if output_name else None
-                return process_video(
+                
+                # 執行轉換
+                result = process_video(
                     video, fps, final_name, max_width, max_height,
                     config_manager.get_ffmpeg_path(),
                     config_manager.get_texture_packer_path(),
@@ -444,8 +685,18 @@ def create_main_tab(config_manager):
                     enable_resize=enable_resize,
                     target_width=int(frame_w) if enable_resize else None,
                     target_height=int(frame_h) if enable_resize else None,
-                    resize_mode=resize_mode_value if enable_resize else "stretch"
+                    resize_mode=resize_mode_value if enable_resize else "stretch",
+                    enable_bg_removal=enable_bg_removal_value,
+                    bg_removal_tolerance=int(bg_removal_tolerance_value),
+                    config_manager=config_manager
                 )
+                
+                # 轉換成功後不需要清理預覽檔案（預覽檔案在獨立目錄）
+                # 轉換臨時檔案會在 video.py 中自動清理
+                if result and "✅" in result:
+                    logging.info("轉換成功完成！")
+                
+                return result
             except (ConfigError, FileError, ConversionError) as e:
                 return handle_error(e, ui_component=True)
             except Exception as e:
@@ -456,6 +707,13 @@ def create_main_tab(config_manager):
             update_preview,
             inputs=[mp4_file],
             outputs=[preview_video, frame_size_info]
+        )
+        
+        # FPS 變更事件
+        fps_slider.change(
+            fn=on_fps_change,
+            inputs=[fps_slider, preview_video],
+            outputs=[fps_status]
         )
         
         # Frame 縮放相關事件
@@ -525,6 +783,13 @@ def create_main_tab(config_manager):
                     frame_width_slider, frame_height_slider]
         )
 
+        # 格式變更事件
+        format_dropdown.change(
+            fn=on_format_change,
+            inputs=[format_dropdown],
+            outputs=[enable_bg_removal]
+        )
+        
         process_button.click(
             fn=on_convert_click,
             inputs=[
@@ -542,7 +807,9 @@ def create_main_tab(config_manager):
                 aspect_height,
                 frame_width_slider,
                 frame_height_slider,
-                resize_mode
+                resize_mode,
+                enable_bg_removal,
+                bg_removal_tolerance_display
             ],
             outputs=[result_output]
         )
@@ -570,9 +837,12 @@ def create_main_tab(config_manager):
             "preview_video": preview_video,
             "result_output": result_output,
             "fps_slider": fps_slider,
+            "fps_status": fps_status,
             "max_width_slider": max_width_slider,
             "max_height_slider": max_height_slider,
             "use_tinypng": use_tinypng,
             "output_path_display": output_path_display,
-            "process_button": process_button
+            "process_button": process_button,
+            "enable_bg_removal": enable_bg_removal,
+            "bg_removal_tolerance_display": bg_removal_tolerance_display
         } 
