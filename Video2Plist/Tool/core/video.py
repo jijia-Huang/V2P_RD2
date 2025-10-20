@@ -449,6 +449,15 @@ def process_video(mp4_file,
 
         # 去背處理
         if enable_bg_removal and output_format.upper() == "PNG":
+            # 檢查縮放模式是否可能影響去背效果
+            if enable_resize and resize_mode in ["pad_black", "pad_transparent"]:
+                logging.warning("=" * 80)
+                logging.warning("⚠️ 警告：您同時啟用了「Frame 縮放 - 填充模式」和「去背處理」")
+                logging.warning(f"⚠️ 縮放模式：{resize_mode}")
+                logging.warning("⚠️ 填充模式會在影格周圍添加邊框，這可能會干擾去背算法從角落檢測背景色")
+                logging.warning("⚠️ 如果去背效果不理想，建議改用「拉伸變形」或「裁切中心」縮放模式")
+                logging.warning("=" * 80)
+            
             logging.info(f"開始批次去背處理（容差：{bg_removal_tolerance}）...")
             from .filter import process_frames_batch
             
@@ -484,6 +493,23 @@ def process_video(mp4_file,
             if enable_bg_removal and output_format.upper() != "PNG":
                 logging.warning(f"輸出格式為 {output_format}，跳過去背處理（僅支援 PNG）")
 
+        # 根據是否啟用去背來決定使用哪些圖片進行打包
+        if enable_bg_removal and output_format.upper() == "PNG":
+            # 如果啟用了去背，使用 filter_ 前綴的圖片
+            filter_frames = glob.glob(os.path.join(frames_dir, "filter_*.png"))
+            if filter_frames:
+                logging.info(f"去背已啟用，使用 {len(filter_frames)} 個去背的圖片進行打包")
+                # 直接在這個目錄掃描時會同時包含原始和去背圖片，我們需要只用去背的
+                frames_dir_for_packing = frames_dir  # 目錄不變，但掃描時會優先去背圖片
+            else:
+                logging.warning("去背已啟用但未找到去背的圖片，將使用原始影格進行打包")
+                frames_dir_for_packing = frames_dir
+        else:
+            # 未啟用去背，使用原始圖片
+            if enable_bg_removal:
+                logging.info("去背已啟用但輸出格式不是 PNG，使用原始影格進行打包")
+            frames_dir_for_packing = frames_dir
+
         # 根據使用者選擇決定使用哪個打包器
         logging.info(f"打包器選擇: {packer_choice}")
         
@@ -493,14 +519,14 @@ def process_video(mp4_file,
                 raise ConfigError("TexturePacker 未設定或不存在，請在設定頁面配置 TexturePacker 路徑")
             logging.info("使用 TexturePacker 進行打包")
             plist_count = _process_with_texturepacker(
-                texture_packer_path, frames_dir, output_dir, output_name, 
+                texture_packer_path, frames_dir_for_packing, output_dir, output_name, 
                 max_width, max_height, output_format, progress
             )
         elif packer_choice == "Python 打包器":
             # 強制使用 Python 打包器
             logging.info("使用 Python 打包器進行打包")
             plist_count = _process_with_python_packer(
-                frames_dir, output_dir, output_name, 
+                frames_dir_for_packing, output_dir, output_name, 
                 max_width, max_height, output_format, progress
             )
         else:
@@ -508,13 +534,13 @@ def process_video(mp4_file,
             if texture_packer_path and os.path.exists(texture_packer_path):
                 logging.info("自動選擇：使用 TexturePacker 進行打包")
                 plist_count = _process_with_texturepacker(
-                    texture_packer_path, frames_dir, output_dir, output_name, 
+                    texture_packer_path, frames_dir_for_packing, output_dir, output_name, 
                     max_width, max_height, output_format, progress
                 )
             else:
                 logging.info("自動選擇：TexturePacker 未設定，使用 Python 打包器進行打包")
                 plist_count = _process_with_python_packer(
-                    frames_dir, output_dir, output_name, 
+                    frames_dir_for_packing, output_dir, output_name, 
                     max_width, max_height, output_format, progress
                 )
 
@@ -571,7 +597,7 @@ def process_video(mp4_file,
         if temp_folder and os.path.exists(temp_folder):
             try:
                 import shutil
-                # shutil.rmtree(temp_folder, ignore_errors=True)
+                shutil.rmtree(temp_folder, ignore_errors=True)
                 logging.info(f"已清理轉換臨時目錄：{temp_folder}")
             except Exception as e:
                 logging.error(f"清理暫存檔案失敗：{str(e)}")
@@ -704,9 +730,18 @@ def extract_frames(video_path, output_folder, fps, ffmpeg_path, output_name, out
         filter_str = ",".join(filters)
         
         # 執行 FFmpeg 命令
+        # 根據輸出格式設置像素格式，確保圖片格式正確
+        if output_format.upper() == "PNG":
+            # PNG 使用 RGBA 格式，確保支援透明度和去背處理
+            pix_fmt = "rgba"
+        else:
+            # JPG 使用 RGB 格式
+            pix_fmt = "yuvj420p"
+        
         cmd = [ffmpeg_path, 
                "-i", video_path, 
                "-vf", filter_str,
+               "-pix_fmt", pix_fmt,
                "-frame_pts", "1", 
                "-q:v", str(quality), 
                "-y", 
@@ -715,6 +750,7 @@ def extract_frames(video_path, output_folder, fps, ffmpeg_path, output_name, out
         # 記錄完整命令以便除錯
         logging.info(f"FFmpeg 完整命令：{' '.join(cmd)}")
         logging.info(f"濾鏡字串：{filter_str}")
+        logging.info(f"像素格式：{pix_fmt} ({output_format.upper()})")
         
         # 品質提示
         if quality > 10:
