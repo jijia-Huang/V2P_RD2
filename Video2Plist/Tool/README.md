@@ -5,7 +5,7 @@
 ## 功能特點
 
 - 支持將視頻文件轉換為 Cocos2d-x 可用的動畫格式
-- 提供簡單的 Web 界面進行轉換
+- 提供 Gradio Web 與 CustomTkinter 桌面介面
 - 自動生成 Cocos2d-x 可用的 .plist 文件
 - 支持調整輸出參數（如幀數、大小等）
 - 詳細的系統日誌記錄
@@ -73,6 +73,8 @@ v2p.exe [選項]
   --no-browser         啟動後不自動開啟瀏覽器
   --log-level {DEBUG,INFO,WARNING,ERROR,CRITICAL}
                         設置日誌記錄級別（預設：INFO）
+  --ui {gradio,webview}
+                        選擇 UI 模式，預設為 webview，可指定 gradio 啟動瀏覽器介面
 ```
 
 ### 基本使用步驟
@@ -83,6 +85,28 @@ v2p.exe [選項]
 4. 設置轉換參數
 5. 點擊轉換按鈕
 6. 轉換完成的 .plist 文件會自動保存在 videos 子目錄下
+
+### WebView 桌面模式（預設）
+
+預設情況下，工具會以 WebView 桌面視窗模式啟動，提供與 Gradio Web 版本完全一致的介面體驗：
+
+```powershell
+python v2p.py --ui webview
+```
+
+或在產生的 exe 上使用（預設模式）。WebView 模式使用 pywebview 內嵌 Gradio 介面，提供原生視窗體驗，無需外部瀏覽器。
+
+**注意**：WebView 模式需要安裝 Microsoft Edge WebView2 Runtime。如果未安裝，工具會顯示錯誤訊息並提供安裝指引。
+
+### Gradio 瀏覽器模式
+
+若希望使用瀏覽器模式（方便開發和除錯），可執行：
+
+```powershell
+python v2p.py --ui gradio
+```
+
+瀏覽器模式會自動開啟系統預設瀏覽器，載入 Gradio 介面。
 
 ### 在 Cocos2d-x 中使用
 

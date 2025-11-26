@@ -2,12 +2,14 @@
 主要轉換頁面
 """
 import os
+import glob
 import logging
 import gradio as gr
-from core.video import get_video_info, process_video
+from core.video import get_video_info
 from core.file_utils import get_application_path
 from core.error_handler import handle_error
 from core.exceptions import ConfigError, FileError, ConversionError
+from ui.services import ConversionService
 
 def create_main_tab(config_manager):
     """建立主要功能頁籤"""
@@ -15,6 +17,8 @@ def create_main_tab(config_manager):
     last_format = config_manager.get_preference("last_format", "PNG")
     last_quality = config_manager.get_preference("last_quality", 5)
     
+    conversion_service = ConversionService(config_manager)
+
     with gr.Tab("轉換", id=1):
         with gr.Row():
             # 左側：上傳和基本設定
@@ -202,7 +206,20 @@ def create_main_tab(config_manager):
                 
             # 右側：預覽
             with gr.Column(scale=1):
-                preview_video = gr.Video(label="影片預覽", show_download_button=False, show_share_button=False, include_audio=False, height="500px")
+                preview_video = gr.Video(
+                    label="影片預覽",
+                    show_download_button=False,
+                    show_share_button=False,
+                    include_audio=False,
+                    height="320px"
+                )
+                preview_gallery = gr.Gallery(
+                    label="預覽影格",
+                    columns=4,
+                    rows=1,
+                    height="260px",
+                    allow_preview=False
+                )
         
         with gr.Group():
             gr.Markdown("### 📝輸出設定")
@@ -421,6 +438,17 @@ def create_main_tab(config_manager):
                 gr.update(value=height)  # frame_height_slider
             ]
         
+        def collect_preview_frames(frames_dir, limit=12):
+            """收集預覽影格供 Gallery 顯示"""
+            try:
+                if not frames_dir or not os.path.exists(frames_dir):
+                    return []
+                frame_paths = sorted(glob.glob(os.path.join(frames_dir, "*.png")))
+                return frame_paths[:limit]
+            except Exception as err:
+                logging.error(f"收集預覽影格失敗：{err}")
+                return []
+
         def cleanup_temp_files():
             """清理預覽影格檔案（不清理轉換臨時檔案）"""
             try:
@@ -492,7 +520,7 @@ def create_main_tab(config_manager):
                         "preview_frames_dir": "",
                         "preview_frame_count": 0
                     })
-                    return None, gr.update(value="ⓘ 提示：請先上傳影片")
+                    return None, gr.update(value="ⓘ 提示：請先上傳影片"), []
                 
                 # 檢查是否是新影片，如果是則清理所有舊檔案
                 current_video_path = config_manager.get_preference("last_video_path", "")
@@ -545,15 +573,17 @@ def create_main_tab(config_manager):
                     
                     # 保存預覽資訊
                     import time
-                    config_manager.save_preferences({
+                    preview_meta = {
                         "preview_frames_dir": frames_dir,
                         "preview_frame_count": frame_count,
                         "preview_fps": current_fps,
                         "preview_video_path": video.name,
                         "preview_update_time": time.time()  # 添加更新時間戳
-                    })
+                    }
+                    config_manager.save_preferences(preview_meta)
                     
                     logging.info(f"預覽影格提取完成：{frame_count} 個影格，已通知去背預覽頁面")
+                    gallery_items = collect_preview_frames(frames_dir)
                     
                     # 更新提示資訊
                     if width and height:
@@ -561,19 +591,21 @@ def create_main_tab(config_manager):
                     else:
                         info_text = f"✅ 已提取 {frame_count} 個影格供預覽"
                     
-                    return video.name, gr.update(value=info_text)
+                    return video.name, gr.update(value=info_text), gallery_items
                     
                 except Exception as e:
                     logging.error(f"提取預覽影格失敗：{str(e)}")
                     # 即使提取失敗，也不影響基本功能
                     if width and height:
-                        return video.name, gr.update(value=f"ⓘ 原始尺寸：{width}x{height}\n⚠️ 預覽影格提取失敗")
+                        info = gr.update(value=f"ⓘ 原始尺寸：{width}x{height}\n⚠️ 預覽影格提取失敗")
                     else:
-                        return video.name, gr.update(value="⚠️ 預覽影格提取失敗")
+                        info = gr.update(value="⚠️ 預覽影格提取失敗")
+                    frames_dir = config_manager.get_preference("preview_frames_dir", "")
+                    return video.name, info, collect_preview_frames(frames_dir)
                 
             except Exception as e:
                 logging.error(f"更新預覽失敗：{str(e)}")
-                return None, gr.update(value="ⓘ 提示：影片讀取失敗")
+                return None, gr.update(value="ⓘ 提示：影片讀取失敗"), []
 
         def clear_inputs():
             """清除輸入"""
@@ -581,7 +613,9 @@ def create_main_tab(config_manager):
                 None,  # mp4_file
                 "",    # output_name
                 None,  # preview_video
-                ""     # result_output
+                "",    # result_output
+                gr.update(value="ⓘ 提示：請先上傳影片"),
+                []     # preview_gallery
             ]
 
         def update_output_path(output_name):
@@ -598,7 +632,7 @@ def create_main_tab(config_manager):
             """當 FPS 改變時重新提取影格"""
             try:
                 if not current_video:
-                    return "ⓘ 提示：請先上傳影片"
+                    return "ⓘ 提示：請先上傳影片", []
                 
                 # 檢查是否需要重新提取
                 current_preview_fps = config_manager.get_preference("preview_fps", 24)
@@ -606,7 +640,8 @@ def create_main_tab(config_manager):
                     # FPS 沒變，不需要重新提取
                     frame_count = config_manager.get_preference("preview_frame_count", 0)
                     if frame_count > 0:
-                        return f"ⓘ FPS={fps_value}，已有 {frame_count} 個預覽影格"
+                        frames_dir = config_manager.get_preference("preview_frames_dir", "")
+                        return f"ⓘ FPS={fps_value}，已有 {frame_count} 個預覽影格", collect_preview_frames(frames_dir)
                 
                 # FPS 改變了，需要重新提取並清理所有臨時檔案
                 logging.info(f"FPS 改變：{current_preview_fps} → {fps_value}，重新提取影格")
@@ -652,11 +687,14 @@ def create_main_tab(config_manager):
                 
                 logging.info(f"FPS 更新完成：重新提取 {frame_count} 個影格，已通知去背預覽頁面")
                 
-                return f"✅ FPS 已更新為 {fps_value}，重新提取 {frame_count} 個影格"
+                return (
+                    f"✅ FPS 已更新為 {fps_value}，重新提取 {frame_count} 個影格",
+                    collect_preview_frames(frames_dir)
+                )
                 
             except Exception as e:
                 logging.error(f"FPS 更新失敗：{str(e)}")
-                return f"⚠️ FPS 更新失敗：{str(e)}"
+                return f"⚠️ FPS 更新失敗：{str(e)}", []
         
         def on_format_change(output_format):
             """當輸出格式改變時"""
@@ -718,22 +756,22 @@ def create_main_tab(config_manager):
                 final_name = f"v2p_{output_name}" if output_name else None
                 
                 # 執行轉換
-                result = process_video(
-                    video, fps, final_name, max_width, max_height,
-                    config_manager.get_ffmpeg_path(),
-                    config_manager.get_texture_packer_path(),
-                    output_format,
-                    quality,
+                result = conversion_service.convert(
+                    video=video,
+                    fps=fps,
+                    output_name=final_name,
+                    max_width=max_width,
+                    max_height=max_height,
+                    output_format=output_format,
+                    quality=quality,
                     use_tinypng=use_tinypng_compression,
-                    tinypng_api_key=config_manager.get_tinypng_api_key(),
                     packer_choice=packer_choice_value,
                     enable_resize=enable_resize,
                     target_width=int(frame_w) if enable_resize else None,
                     target_height=int(frame_h) if enable_resize else None,
                     resize_mode=resize_mode_value if enable_resize else "stretch",
                     enable_bg_removal=enable_bg_removal_value,
-                    bg_removal_tolerance=int(bg_removal_tolerance_value),
-                    config_manager=config_manager
+                    bg_removal_tolerance=int(bg_removal_tolerance_value)
                 )
                 
                 # 轉換成功後不需要清理預覽檔案（預覽檔案在獨立目錄）
@@ -751,14 +789,14 @@ def create_main_tab(config_manager):
         mp4_file.change(
             update_preview,
             inputs=[mp4_file],
-            outputs=[preview_video, frame_size_info]
+            outputs=[preview_video, frame_size_info, preview_gallery]
         )
         
         # FPS 變更事件
         fps_slider.change(
             fn=on_fps_change,
             inputs=[fps_slider, preview_video],
-            outputs=[fps_status]
+            outputs=[fps_status, preview_gallery]
         )
         
         # Frame 縮放相關事件
@@ -873,7 +911,9 @@ def create_main_tab(config_manager):
                 mp4_file,
                 output_name,
                 preview_video,
-                result_output
+                result_output,
+                frame_size_info,
+                preview_gallery
             ]
         )
 
@@ -890,6 +930,7 @@ def create_main_tab(config_manager):
             "mp4_file": mp4_file,
             "output_name": output_name,
             "preview_video": preview_video,
+            "preview_gallery": preview_gallery,
             "result_output": result_output,
             "fps_slider": fps_slider,
             "fps_status": fps_status,

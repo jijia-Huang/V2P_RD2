@@ -51,8 +51,10 @@ def flood_fill_remove_background(image_path, bg_color=None, tolerance=10, output
     try:
         logging.info(f"🔍 開始處理影格：{os.path.basename(image_path)}")
         
-        # 讀取圖片
-        img = cv2.imread(image_path, cv2.IMREAD_UNCHANGED)
+        # 讀取圖片（處理中文路徑問題）
+        # OpenCV 的 imread 無法正確處理中文路徑，使用 numpy + imdecode
+        img_array = np.fromfile(image_path, dtype=np.uint8)
+        img = cv2.imdecode(img_array, cv2.IMREAD_UNCHANGED)
         if img is None:
             raise ConversionError("無法讀取影格檔案", details=f"路徑：{image_path}")
         
@@ -458,10 +460,13 @@ def create_video_from_frames(frames_dir, output_video_path, fps, ffmpeg_path, fr
             
             # 檢查是否有 Alpha 通道
             if len(img_rgba.shape) == 2 or img_rgba.shape[2] != 4:
-                # 沒有 Alpha 通道，直接複製
+                # 沒有 Alpha 通道，直接複製（處理中文路徑問題）
                 preview_frame_path = os.path.join(temp_preview_dir, f"frame_{i:06d}.png")
-                cv2.imwrite(preview_frame_path, img_rgba)
-                preview_frame_files.append(preview_frame_path)
+                # 使用 imencode + tofile 處理中文路徑
+                success, encoded_img = cv2.imencode('.png', img_rgba)
+                if success:
+                    encoded_img.tofile(preview_frame_path)
+                    preview_frame_files.append(preview_frame_path)
                 continue
             
             # 創建背景色圖層
@@ -475,10 +480,13 @@ def create_video_from_frames(frames_dir, output_video_path, fps, ffmpeg_path, fr
             alpha = img_rgba[:, :, 3:4] / 255.0
             result = (img_rgba[:, :, :3] * alpha + bg_layer[:, :, :3] * (1 - alpha)).astype(np.uint8)
             
-            # 保存為 BGR（不需要 Alpha）
+            # 保存為 BGR（不需要 Alpha，處理中文路徑問題）
             preview_frame_path = os.path.join(temp_preview_dir, f"frame_{i:06d}.png")
-            cv2.imwrite(preview_frame_path, result)
-            preview_frame_files.append(preview_frame_path)
+            # 使用 imencode + tofile 處理中文路徑
+            success, encoded_img = cv2.imencode('.png', result)
+            if success:
+                encoded_img.tofile(preview_frame_path)
+                preview_frame_files.append(preview_frame_path)
         
         logging.info(f"已創建 {len(preview_frame_files)} 個帶背景色的預覽影格")
         
@@ -591,9 +599,11 @@ def detect_corner_colors(image_path):
         raise FileError("找不到圖片檔案", details=f"路徑：{image_path}")
     
     try:
-        img = cv2.imread(image_path)
+        # 讀取圖片（處理中文路徑問題）
+        img_array = np.fromfile(image_path, dtype=np.uint8)
+        img = cv2.imdecode(img_array, cv2.IMREAD_UNCHANGED)
         if img is None:
-            raise ConversionError("無法讀取圖片檔案")
+            raise ConversionError("無法讀取圖片檔案", details=f"路徑：{image_path}")
         
         height, width = img.shape[:2]
         

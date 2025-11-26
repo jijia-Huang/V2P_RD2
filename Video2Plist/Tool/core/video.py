@@ -8,7 +8,6 @@ import time
 import shutil
 import logging
 import subprocess
-import gradio as gr
 import tinify
 from datetime import datetime
 from version import get_version
@@ -333,6 +332,16 @@ def save_metadata(output_folder, output_name, settings):
         raise FileError("保存 metadata 失敗", details=str(e))
 
 
+def _safe_progress(progress, value, desc=""):
+    """安全更新進度條"""
+    if not progress:
+        return
+    try:
+        progress(value, desc=desc)
+    except Exception as exc:
+        logging.debug(f"更新進度條失敗：{exc}")
+
+
 def process_video(mp4_file,
                   fps,
                   output_name,
@@ -353,11 +362,11 @@ def process_video(mp4_file,
                   bg_removal_tolerance=10,
                   config_manager=None,
                   ui_manager=None,
-                  progress=gr.Progress()):
+                  progress=None):
     """處理影片轉換
     
     Args:
-        mp4_file: MP4 檔案物件
+        mp4_file: MP4 檔案路徑或帶有 name 屬性的檔案物件
         fps: 影格率
         output_name: 輸出名稱
         max_width: 材質最大寬度
@@ -375,7 +384,7 @@ def process_video(mp4_file,
         enable_bg_removal: 是否啟用去背處理
         bg_removal_tolerance: 去背容差值
         ui_manager: UI 管理器
-        progress: Gradio Progress 物件
+        progress: 可選的進度回呼物件
     
     Returns:
         str: 處理結果訊息
@@ -388,6 +397,10 @@ def process_video(mp4_file,
 
         if not output_name:
             raise ConfigError("請輸入輸出名稱")
+
+        video_path = getattr(mp4_file, "name", mp4_file)
+        if not video_path:
+            raise FileError("影片路徑無效")
         
         # 驗證縮放參數
         if enable_resize:
@@ -399,7 +412,7 @@ def process_video(mp4_file,
                 logging.warning(f"目標尺寸 {target_width}x{target_height} 較大，處理時間可能較長")
 
         # 獲取原始影片尺寸
-        original_width, original_height = get_video_dimensions(mp4_file.name, ffmpeg_path)
+        original_width, original_height = get_video_dimensions(video_path, ffmpeg_path)
         if original_width and original_height:
             logging.info(f"原始影片尺寸：{original_width}x{original_height}")
 
@@ -407,7 +420,7 @@ def process_video(mp4_file,
         output_dir = ensure_output_dir(output_name)
 
         # 詳細記錄處理參數
-        logging.info(f"開始處理影片：{mp4_file.name}")
+        logging.info(f"開始處理影片：{video_path}")
         logging.info(f"參數設定：FPS={fps}, 輸出名稱={output_name}")
         logging.info(f"材質限制：{max_width}x{max_height}")
         logging.info(f"輸出格式：{output_format}")
@@ -428,7 +441,7 @@ def process_video(mp4_file,
         
         logging.info(f"開始提取影格到：{frames_dir}")
         frame_count = extract_frames(
-            mp4_file.name, frames_dir, fps, ffmpeg_path, output_name, output_format, quality,
+            video_path, frames_dir, fps, ffmpeg_path, output_name, output_format, quality,
             enable_resize=enable_resize,
             target_width=target_width,
             target_height=target_height,
@@ -441,7 +454,7 @@ def process_video(mp4_file,
             "preview_frames_dir": frames_dir,
             "preview_frame_count": frame_count,
             "preview_fps": fps,
-            "preview_video_path": mp4_file.name,
+            "preview_video_path": video_path,
             "preview_temp_folder": temp_folder  # 保存臨時目錄路徑，供後續清理
         })
         
@@ -461,7 +474,7 @@ def process_video(mp4_file,
             logging.info(f"開始批次去背處理（容差：{bg_removal_tolerance}）...")
             from .filter import process_frames_batch
             
-            progress(0.3, desc="正在去背處理...")
+            _safe_progress(progress, 0.3, desc="正在去背處理...")
             
             # 檢查去背前的影格
             frame_files_before = glob.glob(os.path.join(frames_dir, "*.png"))
@@ -833,7 +846,7 @@ def _process_with_python_packer(frames_dir, output_dir, output_name,
         from .python_packer import PythonTexturePacker
         
         logging.info("開始執行 Python 打包器")
-        progress(0.6, desc="正在使用 Python 打包器打包...")
+        _safe_progress(progress, 0.6, desc="正在使用 Python 打包器打包...")
         
         # 獲取所有影格檔案
         frame_pattern = os.path.join(frames_dir, f"*.{output_format.lower()}")

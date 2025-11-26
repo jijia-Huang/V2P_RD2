@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>V2P 工具</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="gradio-container">
+        <header class="header">
+            <h1>🎬 V2P 工具</h1>
+            <div class="version" id="version"></div>
+        </header>
+
+        <nav class="tabs">
+            <button class="tab-btn active" data-tab="convert">轉換</button>
+            <button class="tab-btn" data-tab="bg-removal">去背預覽</button>
+            <button class="tab-btn" data-tab="settings">設定</button>
+            <button class="tab-btn" data-tab="output">輸出記錄</button>
+            <button class="tab-btn" data-tab="manage">管理</button>
+        </nav>
+
+        <!-- 轉換頁籤 -->
+        <div class="tab-content active" id="convert-tab">
+            <div class="row">
+                <!-- 左側：上傳和設定 -->
+                <div class="column scale-2">
+                    <div class="form-group">
+                        <label>上傳 MP4 檔案</label>
+                        <button class="btn btn-primary btn-upload" onclick="selectVideoFile()">
+                            📁 選擇 MP4 檔案
+                        </button>
+                        <div id="video-info" class="video-info"></div>
+                    </div>
+
+                    <div class="accordion">
+                        <div class="accordion-header" onclick="toggleAccordion('advanced-settings')">
+                            <span>[點擊展開] 進階設定，設定影格率、材質大小</span>
+                            <span class="accordion-icon">▼</span>
+                        </div>
+                        <div class="accordion-content" id="advanced-settings">
+                            <div class="form-group">
+                                <div class="row">
+                                    <div class="column scale-2">
+                                        <label>FPS（影格率）</label>
+                                        <input type="range" id="fps" min="1" max="60" value="24" step="1">
+                                        <div class="slider-value">
+                                            <span id="fps-value">24</span>
+                                            <small>建議用原影片的 FPS，容量大時請降低</small>
+                                        </div>
+                                    </div>
+                                    <div class="column scale-1">
+                                        <label>輸出格式</label>
+                                        <select id="output-format">
+                                            <option value="PNG">PNG</option>
+                                            <option value="JPG">JPG</option>
+                                        </select>
+                                        <small>JPG 格式檔案較小，但不支援透明度</small>
+                                    </div>
+                                    <div class="column scale-2">
+                                        <label>輸出品質</label>
+                                        <input type="range" id="quality" min="1" max="31" value="5" step="1">
+                                        <div class="slider-value">
+                                            <span id="quality-value">5</span>
+                                            <small>數值越小品質越好（1-31，建議值：5）</small>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="section-title">📝 材質設定</div>
+                            <div class="row">
+                                <div class="column">
+                                    <label>Max Texture Width</label>
+                                    <select id="max-width">
+                                        <option value="512">512</option>
+                                        <option value="1024">1024</option>
+                                        <option value="2048" selected>2048</option>
+                                        <option value="4096">4096</option>
+                                        <option value="8192">8192</option>
+                                    </select>
+                                </div>
+                                <div class="column">
+                                    <label>Max Texture Height</label>
+                                    <select id="max-height">
+                                        <option value="512">512</option>
+                                        <option value="1024">1024</option>
+                                        <option value="2048" selected>2048</option>
+                                        <option value="4096">4096</option>
+                                        <option value="8192">8192</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div class="row">
+                                <div class="column scale-2">
+                                    <label>材質打包器</label>
+                                    <div class="radio-group">
+                                        <label><input type="radio" name="packer" value="自動選擇" checked> 自動選擇</label>
+                                        <label><input type="radio" name="packer" value="TexturePacker"> TexturePacker</label>
+                                        <label><input type="radio" name="packer" value="Python 打包器"> Python 打包器</label>
+                                    </div>
+                                    <small>自動選擇：優先使用 TexturePacker，未設定時使用 Python 打包器</small>
+                                </div>
+                                <div class="column scale-1">
+                                    <div id="packer-status" class="status-info"></div>
+                                </div>
+                            </div>
+
+                            <div class="section-title">🎨 去背設定</div>
+                            <div class="form-group">
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="enable-bg-removal-convert">
+                                    <span>啟用去背處理</span>
+                                </label>
+                                <small>提取影格後自動去背（僅 PNG 格式支援，在「去背預覽」頁面調整參數）</small>
+                            </div>
+                            <div class="form-group">
+                                <label>容差值（在「去背預覽」頁面調整）</label>
+                                <input type="number" id="bg-removal-tolerance-display" readonly class="readonly-input" value="10">
+                            </div>
+                            <div class="info-box" style="margin-top: 10px; font-size: 12px;">
+                                <p>💡 <strong>說明</strong>：</p>
+                                <p>- 去背功能只對 PNG 格式有效</p>
+                                <p>- 在「去背預覽」頁面調整容差值並預覽效果</p>
+                                <p>- 自動從影格四個角落檢測背景顏色</p>
+                                <p style="margin-top: 8px;">⚠️ <strong>重要提示</strong>：</p>
+                                <p>- 如果啟用「Frame 尺寸縮放」且選擇「填充透明邊」或「填充黑邊」模式，可能會影響去背效果</p>
+                                <p>- 建議搭配去背使用「拉伸變形」或「裁切中心」縮放模式</p>
+                            </div>
+
+                            <div class="section-title">📝 壓縮設定</div>
+                            <div class="form-group">
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="use-tinypng">
+                                    <span>使用 TinyPNG 壓縮 PNG</span>
+                                </label>
+                                <small>啟用後會使用 TinyPNG API 對生成的 PNG 檔案進行進階壓縮，需要先在設定頁面設定 API 金鑰</small>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="section-title">📝 輸出設定</div>
+                    <div class="form-group">
+                        <label>輸出名稱</label>
+                        <input type="text" id="output-name" placeholder="輸入動畫名稱（例如：walk_animation）">
+                        <small>將會作為名稱辨識用，請盡量維持其唯一性</small>
+                    </div>
+                    <div class="form-group">
+                        <label>預訂輸出路徑：</label>
+                        <input type="text" id="output-path-display" readonly class="readonly-input">
+                    </div>
+                </div>
+
+                <!-- 右側：預覽 -->
+                <div class="column scale-1">
+                    <div id="preview-section" class="preview-section" style="display: none;">
+                        <div class="section-title">🎬 影片預覽</div>
+                        <div class="video-preview-container">
+                            <video id="preview-video" controls style="width: 100%; max-height: 320px; border-radius: 4px; background: #000;"></video>
+                        </div>
+                        <div class="section-title" style="margin-top: 15px;">🖼️ 預覽影格</div>
+                        <div id="preview-gallery" class="preview-gallery"></div>
+                        <div id="preview-status" class="preview-status"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="result-display" id="result-output"></div>
+
+            <div class="row action-row">
+                <div class="column scale-2">
+                    <button id="convert-btn" class="btn btn-primary btn-large" disabled>開始轉換</button>
+                </div>
+                <div class="column scale-1">
+                    <button class="btn btn-secondary btn-large" onclick="clearForm()">清除</button>
+                </div>
+            </div>
+
+            <div id="progress-container" class="progress-container" style="display: none;">
+                <div class="progress-bar">
+                    <div id="progress-fill" class="progress-fill"></div>
+                </div>
+                <div id="progress-text" class="progress-text">0%</div>
+            </div>
+
+            <div id="result-message" class="result-message"></div>
+        </div>
+
+        <!-- 去背預覽頁籤 -->
+        <div class="tab-content" id="bg-removal-tab">
+            <div class="section-title">去背參數預覽和調整</div>
+            <div class="info-box">
+                <p>自動使用轉換頁面的影片進行去背預覽，調整滿意後回到轉換頁面執行完整處理。</p>
+                <p>⚡ <strong>自動預覽</strong>：拖動 Slider 停下時自動更新預覽</p>
+                <p>💾 <strong>智能快取</strong>：已預覽的影格會被快取，再次查看瞬間載入</p>
+                <p>🤖 <strong>全自動</strong>：自動載入轉換頁面的影片並提取影格</p>
+            </div>
+
+            <div class="row">
+                <!-- 左側：控制區 -->
+                <div class="column scale-1">
+                    <div class="section-title">📹 影片狀態</div>
+                    <div id="bg-removal-status" class="status-message">🔄 正在檢查轉換頁面的影片...</div>
+                    <button class="btn btn-primary" onclick="loadPreviewFrames()" style="margin-top: 10px;">
+                        🔄 載入轉換頁面的影格
+                    </button>
+
+                    <div class="section-title" style="margin-top: 20px;">🎨 去背參數</div>
+                    <div class="form-group">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="enable-bg-removal">
+                            <span>啟用去背</span>
+                        </label>
+                        <small>在轉換頁面執行時是否啟用去背</small>
+                    </div>
+
+                    <div class="form-group">
+                        <label>容差值</label>
+                        <input type="range" id="tolerance-slider" min="0" max="50" value="10" step="1">
+                        <div class="slider-value">
+                            <span id="tolerance-value">10</span>
+                            <small>數值越大，去除的背景區域越廣</small>
+                        </div>
+                    </div>
+
+                    <div class="info-box" style="margin-top: 15px; font-size: 12px;">
+                        <p>💡 <strong>說明</strong>：</p>
+                        <p>- 自動從影格四個角落檢測背景顏色</p>
+                        <p>- 調整容差值以控制去背範圍</p>
+                        <p>- 透明區域在預覽中顯示為洋紅色</p>
+                    </div>
+
+                    <div class="section-title" style="margin-top: 20px;">🎬 影格選擇</div>
+                    <div class="form-group">
+                        <label>影格編號</label>
+                        <input type="range" id="frame-slider" min="1" max="100" value="1" step="1">
+                        <div class="slider-value">
+                            <span id="frame-info">請先提取影格</span>
+                        </div>
+                    </div>
+
+                    <button class="btn btn-secondary btn-large" onclick="previewCurrentFrame()" style="margin-top: 10px;">
+                        👁️ 預覽當前影格
+                    </button>
+
+                    <button class="btn btn-primary btn-large" onclick="savePreviewImage()" style="margin-top: 10px;">
+                        💾 保存去背後的圖片
+                    </button>
+
+                    <div id="save-preview-message" class="status-message" style="margin-top: 10px;"></div>
+                </div>
+
+                <!-- 右側：預覽區 -->
+                <div class="column scale-2">
+                    <div class="section-title">🖼️ 預覽對比</div>
+                    <div id="bg-removal-preview-message" class="status-message">上傳影片並提取影格後，可以預覽去背效果</div>
+                    
+                    <div class="row">
+                        <div class="column">
+                            <div class="section-title" style="font-size: 14px;">原始影格</div>
+                            <div class="preview-image-container">
+                                <img id="original-preview" src="" alt="原始影格" style="max-width: 100%; display: none;">
+                            </div>
+                        </div>
+                        <div class="column">
+                            <div class="section-title" style="font-size: 14px;">去背後效果</div>
+                            <div class="preview-image-container">
+                                <img id="processed-preview" src="" alt="去背後（洋紅色=透明區域）" style="max-width: 100%; display: none;">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 設定頁籤 -->
+        <div class="tab-content" id="settings-tab">
+            <div class="section-title">目前設定值</div>
+            
+            <div class="form-group">
+                <label>FFmpeg.exe 路徑</label>
+                <div class="input-group">
+                    <input type="text" id="ffmpeg-path" readonly class="readonly-input">
+                    <button class="btn btn-small" onclick="window.pywebview.api.selectPath('ffmpeg').then(updateSettings)">📁 選擇目標</button>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label>TexturePacker.exe 路徑</label>
+                <div class="input-group">
+                    <input type="text" id="texture-packer-path" readonly class="readonly-input">
+                    <button class="btn btn-small" onclick="window.pywebview.api.selectPath('texturepacker').then(updateSettings)">📁 選擇目標</button>
+                </div>
+                <button class="btn btn-small" onclick="testTexturePacker()">🔍 測試</button>
+                <div id="test-result" class="test-result"></div>
+            </div>
+
+            <div class="form-group">
+                <label>TinyPNG API 金鑰（可選）</label>
+                <input type="password" id="tinypng-key" placeholder="輸入 TinyPNG API 金鑰以啟用進階 PNG 壓縮">
+                <small>可在 https://tinypng.com/developers 取得免費 API 金鑰，每月可壓縮 500 張圖片</small>
+            </div>
+
+            <div class="row">
+                <button class="btn btn-primary" onclick="saveSettings()">💾 儲存設定</button>
+            </div>
+            <div id="save-status" class="status-message"></div>
+        </div>
+
+        <!-- 輸出記錄頁籤 -->
+        <div class="tab-content" id="output-tab">
+            <div class="row">
+                <div class="column scale-1">
+                    <div class="form-group">
+                        <label>選擇要操作的動畫</label>
+                        <select id="output-selector">
+                            <option value="">請選擇...</option>
+                        </select>
+                    </div>
+                    <div class="row">
+                        <button class="btn btn-small" onclick="refreshOutputList()">🔄 重新整理</button>
+                        <button class="btn btn-small btn-primary" onclick="previewAnimation()">👁️ 預覽</button>
+                        <button class="btn btn-small" onclick="exportAnimation()">📦 匯出</button>
+                    </div>
+                </div>
+                <div class="column scale-1">
+                    <div id="animation-info" class="info-box"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 管理頁籤 -->
+        <div class="tab-content" id="manage-tab">
+            <div class="section-title">🗑️ 輸出管理</div>
+            <div class="form-group">
+                <label>清理超過幾天的檔案</label>
+                <input type="range" id="cleanup-days" min="1" max="90" value="30" step="1">
+                <div class="slider-value">
+                    <span id="cleanup-days-value">30</span> 天
+                </div>
+            </div>
+            <div class="row">
+                <button class="btn" onclick="cleanupOldFiles()">清理舊檔案</button>
+                <button class="btn" onclick="analyzeDiskUsage()">分析磁碟使用</button>
+                <button class="btn" onclick="openOutputFolder()">開啟輸出資料夾</button>
+            </div>
+            <div id="manage-output" class="status-message">點擊上方按鈕執行相關操作</div>
+
+            <div class="section-title">📝 操作日誌</div>
+            <div class="form-group">
+                <label>選擇日誌檔案</label>
+                <select id="log-selector">
+                    <option value="">請選擇...</option>
+                </select>
+                <button class="btn btn-small" onclick="viewLog()">查看日誌</button>
+            </div>
+            <div class="log-display">
+                <textarea id="log-content" readonly rows="25"></textarea>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
