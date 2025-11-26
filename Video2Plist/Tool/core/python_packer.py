@@ -4,14 +4,43 @@ Python 原生材質打包器
 作為 TexturePacker 的備選方案，實現材質集打包功能
 """
 import os
+import sys
 import logging
 import time
-from typing import List, Dict, Tuple, Optional
+from dataclasses import dataclass
+from pathlib import Path
+from typing import List, Dict, Tuple, Optional, Any
 from PIL import Image
-from .maxrects_algorithm import MaxRectsPacker, Rect
+
+_MAXRECTS_MODULE_PATH = Path(__file__).resolve().parent.parent / "python-maxrects-packer"
+if _MAXRECTS_MODULE_PATH.exists():
+    module_path = str(_MAXRECTS_MODULE_PATH)
+    if module_path not in sys.path:
+        sys.path.insert(0, module_path)
+
+try:
+    from maxrects_packer import MaxRectsPacker, PackingLogic
+    from maxrects_packer.oversized_element_bin import OversizedElementBin
+except ImportError as exc:  # pragma: no cover - fail fast during startup
+    raise ImportError(
+        "無法載入 python-maxrects-packer 模組，請確認目錄存在且已安裝相依套件。"
+    ) from exc
 from .plist_generator import PlistGenerator
 from .image_processor import ImageProcessor
 from .exceptions import ConversionError, FileError
+
+
+@dataclass
+class PackedRect:
+    """描述打包後影格的位置資訊"""
+    x: int
+    y: int
+    width: int
+    height: int
+    rotated: bool
+    image_path: str
+    frame_name: str
+    original_size: Tuple[int, int]
 
 
 class PythonTexturePacker:
@@ -102,9 +131,9 @@ class PythonTexturePacker:
         # 確保輸出目錄存在
         os.makedirs(output_dir, exist_ok=True)
     
-    def _load_image_info(self, image_paths: List[str]) -> List[Rect]:
-        """載入圖像資訊並創建矩形物件"""
-        image_rects = []
+    def _load_image_info(self, image_paths: List[str]) -> List[Dict[str, Any]]:
+        """載入圖像資訊並準備給 MaxRects Packer 的輸入資料"""
+        image_rects: List[Dict[str, Any]] = []
         # 重新掃描影格目錄，優先使用 filter_ 前綴的去背圖像
         frames_dir = os.path.dirname(image_paths[0]) if image_paths else ""
         if frames_dir:
@@ -131,20 +160,20 @@ class PythonTexturePacker:
                 logging.debug(f"載入圖像進行打包: {image_path} (修改時間: {file_time_str})")
                 with Image.open(image_path) as img:
                     width, height = img.size
-                    
-                    # 創建矩形物件
-                    rect = Rect(0, 0, width, height)
-                    rect.image_path = image_path
-                    
-                    # 設定 frame_name，移除 filter_ 前綴（如果有的話）
-                    base_name = os.path.splitext(os.path.basename(image_path))[0]
-                    if base_name.startswith("filter_"):
-                        base_name = base_name[7:]  # 移除 "filter_" 前綴 (7 個字元)
-                    rect.frame_name = base_name
-                    
-                    rect.original_size = (width, height)
-                    
-                    image_rects.append(rect)
+
+                base_name = os.path.splitext(os.path.basename(image_path))[0]
+                if base_name.startswith("filter_"):
+                    base_name = base_name[7:]  # 移除 "filter_" 前綴 (7 個字元)
+
+                image_rects.append({
+                    "width": width,
+                    "height": height,
+                    "data": {
+                        "image_path": image_path,
+                        "frame_name": base_name,
+                        "original_size": (width, height)
+                    }
+                })
                     
             except Exception as e:
                 logging.error(f"載入圖像失敗 {image_path}: {str(e)}")
@@ -153,40 +182,71 @@ class PythonTexturePacker:
         logging.info(f"載入完成 - 總計 {len(image_rects)} 個圖像")
         return image_rects
     
-    def _pack_rects(self, image_rects: List[Rect]) -> List[Dict]:
-        """執行矩形打包演算法"""
-        packed_sheets = []
-        remaining_rects = image_rects.copy()
-        sheet_index = 0
-        
-        while remaining_rects:
-            # 為當前材質集創建打包器
-            packer = MaxRectsPacker(self.max_width, self.max_height)
-            
-            # 嘗試打包剩餘的矩形
-            packed_rects = packer.pack_rects(remaining_rects.copy())
-            
-            if not packed_rects:
-                # 如果沒有任何矩形能被打包，說明單個圖像太大
-                largest_rect = max(remaining_rects, key=lambda r: r.width * r.height)
-                logging.error(f"圖像過大無法打包: {largest_rect.frame_name} ({largest_rect.width}x{largest_rect.height})")
-                raise ConversionError(f"圖像過大: {largest_rect.frame_name}")
-            
-            # 記錄打包結果
+    def _pack_rects(self, image_rects: List[Dict[str, Any]]) -> List[Dict]:
+        """使用 python-maxrects-packer 進行打包"""
+        if not image_rects:
+            return []
+
+        options = {
+            "smart": False,          # 與原實作一致，固定材質尺寸
+            "pot": False,
+            "square": False,
+            "allowRotation": True,
+            "border": 0,
+            "logic": PackingLogic.MAX_EDGE,
+        }
+
+        packer = MaxRectsPacker(self.max_width, self.max_height, 0, options)
+        packer.add_array(image_rects)
+
+        packed_sheets: List[Dict[str, Any]] = []
+        for sheet_index, bin_obj in enumerate(packer.bins):
+            if isinstance(bin_obj, OversizedElementBin):
+                rect = bin_obj.rects[0] if bin_obj.rects else None
+                data = getattr(rect, "data", {}) if rect else {}
+                frame_name = data.get("frame_name") or data.get("image_path") or "未知影格"
+                logging.error(f"圖像過大無法打包: {frame_name} ({rect.width if rect else '?'}x{rect.height if rect else '?'})")
+                raise ConversionError(f"圖像過大: {frame_name}")
+
+            if not getattr(bin_obj, "rects", None):
+                continue
+
+            sheet_rects: List[PackedRect] = []
+            for rect in bin_obj.rects:
+                rect_data = getattr(rect, "data", {}) or {}
+                image_path = rect_data.get("image_path")
+                frame_name = rect_data.get("frame_name") or Path(image_path).stem if image_path else "frame"
+                original_size = rect_data.get("original_size", (int(rect.width), int(rect.height)))
+
+                sheet_rects.append(PackedRect(
+                    x=int(rect.x),
+                    y=int(rect.y),
+                    width=int(rect.width),
+                    height=int(rect.height),
+                    rotated=bool(getattr(rect, "rot", False)),
+                    image_path=image_path,
+                    frame_name=frame_name,
+                    original_size=(
+                        int(original_size[0]),
+                        int(original_size[1])
+                    )
+                ))
+
+            sheet_width = int(getattr(bin_obj, "width", self.max_width) or self.max_width)
+            sheet_height = int(getattr(bin_obj, "height", self.max_height) or self.max_height)
+
             packed_sheets.append({
                 "index": sheet_index,
-                "rects": packed_rects,
-                "width": self.max_width,
-                "height": self.max_height
+                "rects": sheet_rects,
+                "width": sheet_width,
+                "height": sheet_height
             })
-            
-            # 從剩餘列表中移除已打包的矩形
-            packed_paths = {rect.image_path for rect in packed_rects}
-            remaining_rects = [rect for rect in remaining_rects if rect.image_path not in packed_paths]
-            
-            logging.debug(f"材質集 {sheet_index}: 打包 {len(packed_rects)} 個圖像，剩餘 {len(remaining_rects)} 個")
-            sheet_index += 1
-        
+
+            logging.debug(f"材質集 {sheet_index}: 打包 {len(sheet_rects)} 個圖像")
+
+        if not packed_sheets:
+            raise ConversionError("MaxRects Packer 未能打包任何圖像")
+
         return packed_sheets
     
     def _generate_output(self, packed_sheets: List[Dict], output_dir: str, output_name: str) -> Dict:

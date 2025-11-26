@@ -34,7 +34,7 @@
 
 #### 1.1 建立基礎模組結構
 - [ ] **ARCH-1.1.1**: 建立 `core/python_packer.py` 主模組
-- [ ] **ARCH-1.1.2**: 建立 `core/maxrects_algorithm.py` 演算法模組
+- [ ] **ARCH-1.1.2**: 導入 `python-maxrects-packer` 演算法模組
 - [ ] **ARCH-1.1.3**: 建立 `core/plist_generator.py` plist 生成器
 - [ ] **ARCH-1.1.4**: 建立 `core/image_processor.py` 圖像處理工具
 

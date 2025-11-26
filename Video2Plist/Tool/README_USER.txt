@@ -39,6 +39,16 @@ V2P 工具可以將 MP4 影片轉換為 Cocos2d-x 遊戲引擎使用的 plist �
 
 【進階功能】
 
+【輸出檢視 / 快速預覽（v2p_editor）】
+- 位置：`Tool/v2p_editor/`
+- 啟動方式：在專案根目錄執行 `python Tool/v2p_editor/main.py`（可選擇在 UI 內瀏覽/拖曳目錄，若想自動載入可以自行加上 `--input 路徑`）
+- 功能：
+  1. 以圖形介面選擇或拖曳 V2P 輸出資料夾
+  2. 即時檢查 metadata、plist、png 是否齊全並顯示錯誤/警示
+  3. 顯示 fps、frame_count、atlas 數等摘要資訊
+  4. 內建播放面板（播放/暫停/循環、FPS 調整）快速預覽 spritesheet
+  5. 可複製 JSON 格式的檢查報告貼回 issue/CI log
+
 📐 Frame 尺寸縮放：
 - 拉伸變形：直接縮放到目標尺寸
 - 裁切中心：保持比例，裁切超出部分
