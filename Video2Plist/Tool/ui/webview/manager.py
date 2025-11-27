@@ -614,14 +614,38 @@ class WebViewUIManager:
         
     def _get_html_path(self):
         """取得 HTML 檔案路徑"""
-        app_path = get_application_path()
-        html_path = os.path.join(app_path, 'ui', 'webview', 'static', 'index.html')
+        if getattr(sys, 'frozen', False):
+            # PyInstaller 打包環境：資源在 sys._MEIPASS
+            if hasattr(sys, '_MEIPASS'):
+                base_path = sys._MEIPASS
+            else:
+                # 如果沒有 _MEIPASS，使用執行檔所在目錄
+                base_path = os.path.dirname(sys.executable)
+        else:
+            # 開發環境：使用應用程式路徑
+            base_path = get_application_path()
+        
+        html_path = os.path.join(base_path, 'ui', 'webview', 'static', 'index.html')
+        
+        # 調試輸出
+        if not os.path.exists(html_path):
+            logging.error(f"HTML 檔案不存在：{html_path}")
+            logging.error(f"base_path: {base_path}")
+            logging.error(f"sys.frozen: {getattr(sys, 'frozen', False)}")
+            logging.error(f"sys._MEIPASS: {getattr(sys, '_MEIPASS', 'N/A')}")
+        
         return html_path
     
     def _get_static_dir(self):
         """取得靜態資源目錄路徑"""
-        app_path = get_application_path()
-        static_dir = os.path.join(app_path, 'ui', 'webview', 'static')
+        if getattr(sys, 'frozen', False):
+            # PyInstaller 打包環境：資源在 sys._MEIPASS
+            base_path = sys._MEIPASS
+        else:
+            # 開發環境：使用應用程式路徑
+            base_path = get_application_path()
+        
+        static_dir = os.path.join(base_path, 'ui', 'webview', 'static')
         return static_dir
     
     def run(self, port=None, window_size=(1400, 900), debug=False):
@@ -694,8 +718,7 @@ class WebViewUIManager:
                 full_error_msg = (
                     "無法啟動 WebView UI：WebView2 Runtime 未安裝或不可用。\n\n"
                     "請安裝 Microsoft Edge WebView2 Runtime：\n"
-                    "https://developer.microsoft.com/microsoft-edge/webview2/\n\n"
-                    "或者使用瀏覽器模式：python v2p.py --ui gradio"
+                    "https://developer.microsoft.com/microsoft-edge/webview2/"
                 )
                 logging.error(full_error_msg)
                 print(f"\n❌ {full_error_msg}\n")

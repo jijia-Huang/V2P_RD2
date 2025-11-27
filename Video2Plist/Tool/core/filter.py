@@ -466,7 +466,7 @@ def create_video_from_frames(frames_dir, output_video_path, fps, ffmpeg_path, fr
                 success, encoded_img = cv2.imencode('.png', img_rgba)
                 if success:
                     encoded_img.tofile(preview_frame_path)
-                    preview_frame_files.append(preview_frame_path)
+                preview_frame_files.append(preview_frame_path)
                 continue
             
             # 創建背景色圖層
@@ -486,7 +486,7 @@ def create_video_from_frames(frames_dir, output_video_path, fps, ffmpeg_path, fr
             success, encoded_img = cv2.imencode('.png', result)
             if success:
                 encoded_img.tofile(preview_frame_path)
-                preview_frame_files.append(preview_frame_path)
+            preview_frame_files.append(preview_frame_path)
         
         logging.info(f"已創建 {len(preview_frame_files)} 個帶背景色的預覽影格")
         

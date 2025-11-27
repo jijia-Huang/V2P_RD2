@@ -14,8 +14,8 @@ V2P 工具可以將 MP4 影片轉換為 Cocos2d-x 遊戲引擎使用的 plist �
 
 1. 雙擊 v2p.exe 啟動程式
 2. 等待命令提示字元視窗顯示啟動訊息
-3. 瀏覽器會自動開啟 (http://127.0.0.1:7860)
-4. 如果沒有自動開啟，請手動在瀏覽器輸入上述網址
+3. WebView 桌面視窗會自動開啟
+4. 如果視窗沒有自動開啟，請檢查是否已安裝 Microsoft Edge WebView2 Runtime
 
 💻 系統需求
 ────────────────────────────────────────────────────────────
@@ -43,11 +43,12 @@ V2P 工具可以將 MP4 影片轉換為 Cocos2d-x 遊戲引擎使用的 plist �
 - 位置：`Tool/v2p_editor/`
 - 啟動方式：在專案根目錄執行 `python Tool/v2p_editor/main.py`（可選擇在 UI 內瀏覽/拖曳目錄，若想自動載入可以自行加上 `--input 路徑`）
 - 功能：
-  1. 以圖形介面選擇或拖曳 V2P 輸出資料夾
+  1. 以 WebView 桌面介面選擇或拖曳 V2P 輸出資料夾
   2. 即時檢查 metadata、plist、png 是否齊全並顯示錯誤/警示
   3. 顯示 fps、frame_count、atlas 數等摘要資訊
   4. 內建播放面板（播放/暫停/循環、FPS 調整）快速預覽 spritesheet
   5. 可複製 JSON 格式的檢查報告貼回 issue/CI log
+- 注意：v2p_editor 使用 WebView 介面，需要安裝 Microsoft Edge WebView2 Runtime
 
 📐 Frame 尺寸縮放：
 - 拉伸變形：直接縮放到目標尺寸

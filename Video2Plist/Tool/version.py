@@ -20,7 +20,6 @@ VERSION_STRING = f"v{VERSION['major']}.{VERSION['minor']}.{VERSION['patch']}"
 # 構建資訊
 BUILD_INFO = {
     'date': '2025-10-09',          # 更新發布日期
-    'min_gradio': '5.16.2',        # 最低需求的 gradio 版本
     'min_python': '3.8'            # 最低需求的 python 版本
 }
 
@@ -41,7 +40,7 @@ def check_compatibility():
         logging.info("開始檢查相容性")
         
         # 檢查必要套件是否可以導入
-        required_packages = ['gradio', 'packaging']
+        required_packages = ['packaging']
         for package in required_packages:
             try:
                 importlib.import_module(package)
