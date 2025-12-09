@@ -54,6 +54,151 @@ function initApp() {
         qualityValue.textContent = e.target.value;
     });
 
+    // Frame 尺寸縮放相關初始化
+    const enableFrameResizeCheckbox = document.getElementById('enable-frame-resize');
+    const frameResizeOptions = document.getElementById('frame-resize-options');
+    const lockAspectRatioCheckbox = document.getElementById('lock-aspect-ratio');
+    const frameWidthSlider = document.getElementById('frame-width');
+    const frameHeightSlider = document.getElementById('frame-height');
+    const frameWidthInput = document.getElementById('frame-width-input');
+    const frameHeightInput = document.getElementById('frame-height-input');
+    const aspectWidthInput = document.getElementById('aspect-width');
+    const aspectHeightInput = document.getElementById('aspect-height');
+    const frameSizeInfo = document.getElementById('frame-size-info');
+    
+    // 儲存原始影片尺寸
+    window.originalVideoSize = null;
+    
+    // 同步滑桿和輸入框的函數
+    function syncWidthSliderAndInput(value) {
+        if (frameWidthSlider) frameWidthSlider.value = value;
+        if (frameWidthInput) frameWidthInput.value = value;
+    }
+    
+    function syncHeightSliderAndInput(value) {
+        if (frameHeightSlider) frameHeightSlider.value = value;
+        if (frameHeightInput) frameHeightInput.value = value;
+    }
+    
+    // 啟用/停用 Frame 縮放選項
+    if (enableFrameResizeCheckbox) {
+        enableFrameResizeCheckbox.addEventListener('change', (e) => {
+            frameResizeOptions.style.display = e.target.checked ? 'block' : 'none';
+            updateFrameSizeInfo();
+        });
+    }
+    
+    // 鎖定長寬比處理
+    if (lockAspectRatioCheckbox) {
+        lockAspectRatioCheckbox.addEventListener('change', (e) => {
+            if (e.target.checked && window.originalVideoSize) {
+                updateFrameSizeFromAspect();
+            }
+        });
+    }
+    
+    // 寬度滑桿處理
+    if (frameWidthSlider) {
+        frameWidthSlider.addEventListener('input', (e) => {
+            const value = parseInt(e.target.value);
+            syncWidthSliderAndInput(value);
+            const lockCheckbox = document.getElementById('lock-aspect-ratio');
+            if (lockCheckbox && lockCheckbox.checked) {
+                updateHeightFromWidth(value);
+            } else {
+                updateFrameSizeInfo();
+            }
+        });
+    }
+    
+    // 寬度輸入框處理
+    if (frameWidthInput) {
+        frameWidthInput.addEventListener('input', (e) => {
+            let value = parseInt(e.target.value) || 1;
+            // 限制範圍
+            if (value < 1) value = 1;
+            if (value > 8192) value = 8192;
+            syncWidthSliderAndInput(value);
+            const lockCheckbox = document.getElementById('lock-aspect-ratio');
+            if (lockCheckbox && lockCheckbox.checked) {
+                updateHeightFromWidth(value);
+            } else {
+                updateFrameSizeInfo();
+            }
+        });
+        
+        frameWidthInput.addEventListener('blur', (e) => {
+            let value = parseInt(e.target.value) || 1;
+            if (value < 1) value = 1;
+            if (value > 8192) value = 8192;
+            syncWidthSliderAndInput(value);
+            const lockCheckbox = document.getElementById('lock-aspect-ratio');
+            if (lockCheckbox && lockCheckbox.checked) {
+                updateHeightFromWidth(value);
+            } else {
+                updateFrameSizeInfo();
+            }
+        });
+    }
+    
+    // 高度滑桿處理
+    if (frameHeightSlider) {
+        frameHeightSlider.addEventListener('input', (e) => {
+            const value = parseInt(e.target.value);
+            syncHeightSliderAndInput(value);
+            const lockCheckbox = document.getElementById('lock-aspect-ratio');
+            if (lockCheckbox && lockCheckbox.checked) {
+                updateWidthFromHeight(value);
+            } else {
+                updateFrameSizeInfo();
+            }
+        });
+    }
+    
+    // 高度輸入框處理
+    if (frameHeightInput) {
+        frameHeightInput.addEventListener('input', (e) => {
+            let value = parseInt(e.target.value) || 1;
+            // 限制範圍
+            if (value < 1) value = 1;
+            if (value > 8192) value = 8192;
+            syncHeightSliderAndInput(value);
+            const lockCheckbox = document.getElementById('lock-aspect-ratio');
+            if (lockCheckbox && lockCheckbox.checked) {
+                updateWidthFromHeight(value);
+            } else {
+                updateFrameSizeInfo();
+            }
+        });
+        
+        frameHeightInput.addEventListener('blur', (e) => {
+            let value = parseInt(e.target.value) || 1;
+            if (value < 1) value = 1;
+            if (value > 8192) value = 8192;
+            syncHeightSliderAndInput(value);
+            const lockCheckbox = document.getElementById('lock-aspect-ratio');
+            if (lockCheckbox && lockCheckbox.checked) {
+                updateWidthFromHeight(value);
+            } else {
+                updateFrameSizeInfo();
+            }
+        });
+    }
+    
+    // 比例輸入處理
+    if (aspectWidthInput && aspectHeightInput) {
+        aspectWidthInput.addEventListener('input', () => {
+            if (lockAspectRatioCheckbox && lockAspectRatioCheckbox.checked) {
+                updateFrameSizeFromAspect();
+            }
+        });
+        aspectHeightInput.addEventListener('input', () => {
+            if (lockAspectRatioCheckbox && lockAspectRatioCheckbox.checked) {
+                updateFrameSizeFromAspect();
+            }
+        });
+    }
+
     const cleanupDaysSlider = document.getElementById('cleanup-days');
     const cleanupDaysValue = document.getElementById('cleanup-days-value');
     if (cleanupDaysSlider) {
@@ -182,46 +327,220 @@ function updateOutputPath() {
     }
 }
 
+// Frame 縮放相關函數
+function setAspectRatio(width, height) {
+    const aspectWidthInput = document.getElementById('aspect-width');
+    const aspectHeightInput = document.getElementById('aspect-height');
+    if (aspectWidthInput && aspectHeightInput) {
+        aspectWidthInput.value = width;
+        aspectHeightInput.value = height;
+        const lockAspectRatioCheckbox = document.getElementById('lock-aspect-ratio');
+        if (lockAspectRatioCheckbox && lockAspectRatioCheckbox.checked) {
+            updateFrameSizeFromAspect();
+        }
+    }
+}
+
+function setOriginalAspectRatio() {
+    if (window.originalVideoSize) {
+        const { width, height } = window.originalVideoSize;
+        setAspectRatio(width, height);
+    }
+}
+
+function updateFrameSizeFromAspect() {
+    const aspectWidth = parseInt(document.getElementById('aspect-width').value) || 16;
+    const aspectHeight = parseInt(document.getElementById('aspect-height').value) || 9;
+    const aspectRatio = aspectWidth / aspectHeight;
+    
+    const frameWidthSlider = document.getElementById('frame-width');
+    const frameWidthInput = document.getElementById('frame-width-input');
+    const currentWidth = frameWidthSlider ? parseInt(frameWidthSlider.value) : (frameWidthInput ? parseInt(frameWidthInput.value) : 1920);
+    const newHeight = Math.round(currentWidth / aspectRatio);
+    
+    // 同步更新高度滑桿和輸入框
+    const frameHeightSlider = document.getElementById('frame-height');
+    const frameHeightInput = document.getElementById('frame-height-input');
+    if (frameHeightSlider) frameHeightSlider.value = newHeight;
+    if (frameHeightInput) frameHeightInput.value = newHeight;
+    updateFrameSizeInfo();
+}
+
+function updateHeightFromWidth(width) {
+    const aspectWidth = parseInt(document.getElementById('aspect-width').value) || 16;
+    const aspectHeight = parseInt(document.getElementById('aspect-height').value) || 9;
+    const aspectRatio = aspectWidth / aspectHeight;
+    const newHeight = Math.round(width / aspectRatio);
+    
+    // 同步更新滑桿和輸入框
+    const frameHeightSlider = document.getElementById('frame-height');
+    const frameHeightInput = document.getElementById('frame-height-input');
+    if (frameHeightSlider) frameHeightSlider.value = newHeight;
+    if (frameHeightInput) frameHeightInput.value = newHeight;
+    updateFrameSizeInfo();
+}
+
+function updateWidthFromHeight(height) {
+    const aspectWidth = parseInt(document.getElementById('aspect-width').value) || 16;
+    const aspectHeight = parseInt(document.getElementById('aspect-height').value) || 9;
+    const aspectRatio = aspectWidth / aspectHeight;
+    const newWidth = Math.round(height * aspectRatio);
+    
+    // 同步更新滑桿和輸入框
+    const frameWidthSlider = document.getElementById('frame-width');
+    const frameWidthInput = document.getElementById('frame-width-input');
+    if (frameWidthSlider) frameWidthSlider.value = newWidth;
+    if (frameWidthInput) frameWidthInput.value = newWidth;
+    updateFrameSizeInfo();
+}
+
+function updateFrameSizeInfo() {
+    const frameSizeInfo = document.getElementById('frame-size-info');
+    if (!frameSizeInfo) return;
+    
+    const enableResizeCheckbox = document.getElementById('enable-frame-resize');
+    const enableResize = enableResizeCheckbox ? enableResizeCheckbox.checked : false;
+    if (!enableResize) {
+        frameSizeInfo.innerHTML = '<p>ⓘ 提示：請先啟用 Frame 尺寸縮放</p>';
+        return;
+    }
+    
+    if (!window.originalVideoSize) {
+        frameSizeInfo.innerHTML = '<p>ⓘ 提示：請先上傳影片</p>';
+        return;
+    }
+    
+    const originalWidth = window.originalVideoSize.width;
+    const originalHeight = window.originalVideoSize.height;
+    
+    // 從輸入框或滑桿獲取值
+    const frameWidthInput = document.getElementById('frame-width-input');
+    const frameHeightInput = document.getElementById('frame-height-input');
+    const frameWidthSlider = document.getElementById('frame-width');
+    const frameHeightSlider = document.getElementById('frame-height');
+    
+    const targetWidth = frameWidthInput ? parseInt(frameWidthInput.value) : (frameWidthSlider ? parseInt(frameWidthSlider.value) : originalWidth);
+    const targetHeight = frameHeightInput ? parseInt(frameHeightInput.value) : (frameHeightSlider ? parseInt(frameHeightSlider.value) : originalHeight);
+    
+    const originalRatio = (originalWidth / originalHeight).toFixed(2);
+    const targetRatio = (targetWidth / targetHeight).toFixed(2);
+    
+    frameSizeInfo.innerHTML = `<p>ⓘ 原始：${originalWidth}x${originalHeight} (${originalRatio}:1) → 縮放後：${targetWidth}x${targetHeight} (${targetRatio}:1)</p>`;
+}
+
 async function selectVideoFile() {
+    console.log('selectVideoFile 開始執行');
     if (window.pywebview && window.pywebview.api) {
         try {
+            console.log('調用 selectVideoFile API...');
             const result = await window.pywebview.api.selectVideoFile();
+            console.log('selectVideoFile API 返回結果：', result);
+            
             if (result && result.success) {
                 const videoPath = result.path;
                 const fileName = videoPath.split(/[/\\]/).pop();
+                console.log('影片路徑：', videoPath, '檔案名稱：', fileName);
                 
                 const videoInfo = document.getElementById('video-info');
+                if (!videoInfo) {
+                    console.error('找不到 video-info 元素');
+                    showMessage('找不到影片資訊顯示區域', 'error');
+                    return;
+                }
+                
                 videoInfo.style.display = 'block';
-                videoInfo.innerHTML = `
-                    <strong>已選擇檔案：</strong> ${fileName}<br>
-                    <strong>完整路徑：</strong> ${videoPath}
-                `;
-
+                
                 // 儲存檔案路徑供轉換使用
                 window.selectedVideoPath = videoPath;
                 
+                // 獲取影片尺寸並更新 UI
+                let videoInfoHTML = `
+                    <strong>已選擇檔案：</strong> ${fileName}<br>
+                    <strong>完整路徑：</strong> ${videoPath}
+                `;
+                
+                if (result.width && result.height) {
+                    console.log('影片尺寸：', result.width, 'x', result.height);
+                    window.originalVideoSize = { width: result.width, height: result.height };
+                    const aspectRatio = (result.width / result.height).toFixed(2);
+                    videoInfoHTML += `<br><strong>原始尺寸：</strong> ${result.width} × ${result.height} 像素 (${aspectRatio}:1)`;
+                    
+                    // 更新 Frame 縮放預設值
+                    try {
+                        const frameWidthSlider = document.getElementById('frame-width');
+                        const frameHeightSlider = document.getElementById('frame-height');
+                        const frameWidthInput = document.getElementById('frame-width-input');
+                        const frameHeightInput = document.getElementById('frame-height-input');
+                        const aspectWidthEl = document.getElementById('aspect-width');
+                        const aspectHeightEl = document.getElementById('aspect-height');
+                        
+                        // 同步更新滑桿和輸入框
+                        if (frameWidthSlider) frameWidthSlider.value = result.width;
+                        if (frameWidthInput) frameWidthInput.value = result.width;
+                        if (frameHeightSlider) frameHeightSlider.value = result.height;
+                        if (frameHeightInput) frameHeightInput.value = result.height;
+                        
+                        // 更新比例設定
+                        const gcd = (a, b) => b === 0 ? a : gcd(b, a % b);
+                        const divisor = gcd(result.width, result.height);
+                        if (aspectWidthEl) aspectWidthEl.value = result.width / divisor;
+                        if (aspectHeightEl) aspectHeightEl.value = result.height / divisor;
+                        
+                        updateFrameSizeInfo();
+                    } catch (e) {
+                        console.error('更新 Frame 縮放設定時出錯：', e);
+                    }
+                } else {
+                    console.warn('無法獲取影片尺寸');
+                    videoInfoHTML += `<br><small style="color: #999;">⚠️ 無法讀取影片尺寸</small>`;
+                }
+                
+                videoInfo.innerHTML = videoInfoHTML;
+                console.log('影片資訊已更新');
+                
                 // 啟用轉換按鈕
-                document.getElementById('convert-btn').disabled = false;
+                const convertBtn = document.getElementById('convert-btn');
+                if (convertBtn) {
+                    convertBtn.disabled = false;
+                    console.log('轉換按鈕已啟用');
+                } else {
+                    console.error('找不到 convert-btn 元素');
+                }
 
                 // 自動填入輸出名稱（如果為空）
                 const outputNameInput = document.getElementById('output-name');
-                if (!outputNameInput.value) {
+                if (outputNameInput && !outputNameInput.value) {
                     outputNameInput.value = fileName.replace('.mp4', '');
                     updateOutputPath();
                 }
 
                 // 載入影片預覽
-                await loadVideoPreview(videoPath);
+                console.log('開始載入影片預覽...');
+                try {
+                    await loadVideoPreview(videoPath);
+                    console.log('影片預覽載入完成');
+                } catch (e) {
+                    console.error('載入影片預覽失敗：', e);
+                }
 
                 // 提取預覽影格
-                await extractPreviewFrames(videoPath);
+                console.log('開始提取預覽影格...');
+                try {
+                    await extractPreviewFrames(videoPath);
+                    console.log('預覽影格提取完成');
+                } catch (e) {
+                    console.error('提取預覽影格失敗：', e);
+                }
             } else {
+                console.error('選擇檔案失敗：', result);
                 showMessage(result ? result.error : '選擇檔案失敗', 'error');
             }
         } catch (error) {
+            console.error('selectVideoFile 發生錯誤：', error);
             showMessage(`選擇檔案失敗：${error.message || error}`, 'error');
         }
     } else {
+        console.error('無法連接到後端 API');
         showMessage('無法連接到後端 API', 'error');
     }
 }
@@ -230,54 +549,130 @@ async function loadVideoPreview(videoPath) {
     const previewVideo = document.getElementById('preview-video');
     const previewSection = document.getElementById('preview-section');
     
-    if (previewVideo && videoPath) {
-        // 使用 file:// URL 載入影片
-        previewVideo.src = `file:///${videoPath.replace(/\\/g, '/')}`;
-        previewSection.style.display = 'block';
+    if (previewVideo && videoPath && previewSection) {
+        try {
+            // 使用 file:// URL 載入影片
+            const videoUrl = `file:///${videoPath.replace(/\\/g, '/')}`;
+            previewVideo.src = videoUrl;
+            previewSection.style.display = 'block';
+            
+            // 確保影片載入
+            previewVideo.onloadedmetadata = () => {
+                console.log('影片載入成功，尺寸：', previewVideo.videoWidth, 'x', previewVideo.videoHeight);
+            };
+            
+            previewVideo.onerror = (e) => {
+                console.error('影片載入失敗：', e);
+                if (previewSection) {
+                    previewSection.innerHTML = '<p style="color: #dc2626;">⚠️ 無法載入影片預覽</p>';
+                }
+            };
+        } catch (error) {
+            console.error('載入影片預覽錯誤：', error);
+        }
     }
 }
 
 async function extractPreviewFrames(videoPath) {
-    if (!window.pywebview || !window.pywebview.api) return;
+    console.log('extractPreviewFrames 開始執行，影片路徑：', videoPath);
+    
+    if (!window.pywebview || !window.pywebview.api) {
+        console.error('pywebview API 不可用');
+        return;
+    }
 
     const previewStatus = document.getElementById('preview-status');
     const previewGallery = document.getElementById('preview-gallery');
+    const previewSection = document.getElementById('preview-section');
     
-    previewStatus.textContent = '正在提取預覽影格...';
-    previewGallery.innerHTML = '';
+    // 確保預覽區域顯示
+    if (previewSection) {
+        previewSection.style.display = 'block';
+        console.log('預覽區域已顯示');
+    } else {
+        console.error('找不到 preview-section 元素');
+    }
+    
+    if (previewStatus) {
+        previewStatus.textContent = '正在提取預覽影格...';
+        previewStatus.style.color = '#666';
+    }
+    if (previewGallery) {
+        previewGallery.innerHTML = '';
+    }
 
     try {
-        const fps = parseInt(document.getElementById('fps').value);
+        const fpsEl = document.getElementById('fps');
+        const fps = fpsEl ? (parseInt(fpsEl.value) || 24) : 24;
+        console.log('FPS：', fps);
+        
+        const enableResizeCheckbox = document.getElementById('enable-frame-resize');
+        const enableResize = enableResizeCheckbox ? enableResizeCheckbox.checked : false;
+        // 從輸入框或滑桿獲取值
+        const frameWidthInput = document.getElementById('frame-width-input');
+        const frameHeightInput = document.getElementById('frame-height-input');
+        const frameWidthSlider = document.getElementById('frame-width');
+        const frameHeightSlider = document.getElementById('frame-height');
+        const targetWidth = enableResize ? (frameWidthInput ? parseInt(frameWidthInput.value) : (frameWidthSlider ? parseInt(frameWidthSlider.value) : 1920)) : null;
+        const targetHeight = enableResize ? (frameHeightInput ? parseInt(frameHeightInput.value) : (frameHeightSlider ? parseInt(frameHeightSlider.value) : 1080)) : null;
+        const resizeModeRadio = document.querySelector('input[name="resize-mode"]:checked');
+        const resizeMode = resizeModeRadio ? resizeModeRadio.value : 'stretch';
+        
+        console.log('提取預覽影格參數：', {
+            videoPath,
+            fps,
+            enableResize,
+            targetWidth,
+            targetHeight,
+            resizeMode
+        });
+        
+        console.log('調用 extractPreviewFrames API...');
         const result = await window.pywebview.api.extractPreviewFrames({
             videoPath: videoPath,
-            fps: fps
+            fps: fps,
+            enableResize: enableResize,
+            targetWidth: targetWidth,
+            targetHeight: targetHeight,
+            resizeMode: resizeMode
         });
+        console.log('extractPreviewFrames API 返回結果：', result);
 
         if (result && result.success) {
             const frames = result.frames || [];
             const frameCount = result.frameCount || 0;
             
-            previewStatus.textContent = `✅ 已提取 ${frameCount} 個影格供預覽`;
+            if (previewStatus) {
+                previewStatus.textContent = `✅ 已提取 ${frameCount} 個影格供預覽`;
+                previewStatus.style.color = '#059669';
+            }
 
             // 顯示預覽影格
-            previewGallery.innerHTML = '';
-            frames.forEach((framePath, index) => {
-                const item = document.createElement('div');
-                item.className = 'preview-gallery-item';
-                item.innerHTML = `<img src="file:///${framePath.replace(/\\/g, '/')}" alt="Frame ${index + 1}">`;
-                previewGallery.appendChild(item);
-            });
-
-            if (frames.length === 0) {
-                previewGallery.innerHTML = '<p style="grid-column: 1 / -1; text-align: center; color: #666;">暫無預覽影格</p>';
+            if (previewGallery) {
+                previewGallery.innerHTML = '';
+                if (frames.length > 0) {
+                    frames.forEach((framePath, index) => {
+                        const item = document.createElement('div');
+                        item.className = 'preview-gallery-item';
+                        item.innerHTML = `<img src="file:///${framePath.replace(/\\/g, '/')}" alt="Frame ${index + 1}">`;
+                        previewGallery.appendChild(item);
+                    });
+                } else {
+                    previewGallery.innerHTML = '<p style="grid-column: 1 / -1; text-align: center; color: #666;">暫無預覽影格</p>';
+                }
             }
         } else {
-            previewStatus.textContent = `⚠️ 提取預覽影格失敗：${result ? result.error : '未知錯誤'}`;
-            previewStatus.style.color = '#dc2626';
+            if (previewStatus) {
+                previewStatus.textContent = `⚠️ 提取預覽影格失敗：${result ? result.error : '未知錯誤'}`;
+                previewStatus.style.color = '#dc2626';
+            }
         }
     } catch (error) {
-        previewStatus.textContent = `⚠️ 提取預覽影格失敗：${error.message || error}`;
-        previewStatus.style.color = '#dc2626';
+        console.error('提取預覽影格錯誤：', error);
+        if (previewStatus) {
+            previewStatus.textContent = `⚠️ 提取預覽影格失敗：${error.message || error}`;
+            previewStatus.style.color = '#dc2626';
+        }
     }
 }
 
@@ -316,6 +711,19 @@ async function handleConvert() {
     const enableBgRemoval = enableBgRemovalCheckbox ? (enableBgRemovalCheckbox.checked && outputFormat === 'PNG') : false;
     const bgRemovalToleranceEl = document.getElementById('bg-removal-tolerance-display');
     const bgRemovalTolerance = bgRemovalToleranceEl ? (parseInt(bgRemovalToleranceEl.value) || 10) : 10;
+    
+    // Frame 縮放參數
+    const enableFrameResizeCheckbox = document.getElementById('enable-frame-resize');
+    const enableResize = enableFrameResizeCheckbox ? enableFrameResizeCheckbox.checked : false;
+        // 從輸入框或滑桿獲取值
+        const frameWidthInput = document.getElementById('frame-width-input');
+        const frameHeightInput = document.getElementById('frame-height-input');
+        const frameWidthSlider = document.getElementById('frame-width');
+        const frameHeightSlider = document.getElementById('frame-height');
+        const targetWidth = enableResize ? (frameWidthInput ? parseInt(frameWidthInput.value) : (frameWidthSlider ? parseInt(frameWidthSlider.value) : 1920)) : null;
+        const targetHeight = enableResize ? (frameHeightInput ? parseInt(frameHeightInput.value) : (frameHeightSlider ? parseInt(frameHeightSlider.value) : 1080)) : null;
+    const resizeModeRadio = document.querySelector('input[name="resize-mode"]:checked');
+    const resizeMode = resizeModeRadio ? resizeModeRadio.value : 'stretch';
 
     console.log('轉換參數：', {
         videoPath,
@@ -328,7 +736,11 @@ async function handleConvert() {
         packerChoice,
         useTinyPNG,
         enableBgRemoval,
-        bgRemovalTolerance
+        bgRemovalTolerance,
+        enableResize,
+        targetWidth,
+        targetHeight,
+        resizeMode
     });
 
     // 顯示進度條
@@ -368,6 +780,10 @@ async function handleConvert() {
             maxHeight: maxHeight,
             packerChoice: packerChoice,
             useTinyPNG: useTinyPNG,
+            enableResize: enableResize,
+            targetWidth: targetWidth,
+            targetHeight: targetHeight,
+            resizeMode: resizeMode,
             enableBgRemoval: enableBgRemoval,
             bgRemovalTolerance: bgRemovalTolerance
         });

@@ -3,16 +3,38 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
 # 確保可以導入當前目錄的模組
-if __package__ in (None, ""):
-    # 當作為腳本運行時，將當前目錄添加到路徑
+# 在打包環境中，需要將父目錄添加到路徑，以便導入 v2p_editor 包
+if getattr(sys, 'frozen', False):
+    # PyInstaller 打包環境：將執行檔所在目錄添加到路徑
+    if hasattr(sys, '_MEIPASS'):
+        # 單檔案模式：資源在 _MEIPASS
+        base_path = sys._MEIPASS
+    else:
+        # 單目錄模式：資源在執行檔目錄
+        base_path = os.path.dirname(sys.executable)
+    
+    # 將 base_path 添加到 sys.path，確保可以導入 v2p_editor
+    if base_path not in sys.path:
+        sys.path.insert(0, base_path)
+    
+    # 使用絕對導入
+    from v2p_editor.webview_ui.manager import WebViewUIManager
+elif __package__ in (None, ""):
+    # 當作為腳本運行時（開發環境）
     current_dir = Path(__file__).resolve().parent
-    if str(current_dir) not in sys.path:
-        sys.path.insert(0, str(current_dir))
-    from webview_ui.manager import WebViewUIManager  # type: ignore  # pylint: disable=import-error
+    parent_dir = current_dir.parent
+    
+    # 將父目錄添加到路徑，以便導入 v2p_editor 包
+    if str(parent_dir) not in sys.path:
+        sys.path.insert(0, str(parent_dir))
+    
+    # 使用絕對導入
+    from v2p_editor.webview_ui.manager import WebViewUIManager
 else:
     # 當作為包導入時
     from .webview_ui.manager import WebViewUIManager

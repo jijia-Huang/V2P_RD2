@@ -141,16 +141,26 @@ class WebViewAPI:
                     filetypes=[("執行檔", "*.exe"), ("所有檔案", "*.*")]
                 )
                 if file_path:
-                    self.config_manager.set_ffmpeg_path(file_path)
-                    self.config_manager.save_config()
+                    # 使用 save_config 方法設置 FFmpeg 路徑
+                    current_config = self.config_manager.config.copy()
+                    self.config_manager.save_config(
+                        ffmpeg_path=file_path,
+                        texture_packer_path=current_config.get("texture_packer_path", ""),
+                        tinypng_api_key=current_config.get("tinypng_api_key", "")
+                    )
             elif tool_type == "texturepacker":
                 file_path = filedialog.askopenfilename(
                     title="選擇 TexturePacker 執行檔",
                     filetypes=[("執行檔", "*.exe"), ("所有檔案", "*.*")]
                 )
                 if file_path:
-                    self.config_manager.set_texture_packer_path(file_path)
-                    self.config_manager.save_config()
+                    # 使用 save_config 方法設置 TexturePacker 路徑
+                    current_config = self.config_manager.config.copy()
+                    self.config_manager.save_config(
+                        ffmpeg_path=current_config.get("ffmpeg_path", ""),
+                        texture_packer_path=file_path,
+                        tinypng_api_key=current_config.get("tinypng_api_key", "")
+                    )
             
             root.destroy()
             return {"success": True, "path": file_path if file_path else ""}
@@ -164,8 +174,13 @@ class WebViewAPI:
             if params:
                 tinypng_key = params.get('tinypngKey', '')
                 if tinypng_key:
-                    self.config_manager.set_tinypng_api_key(tinypng_key)
-                    self.config_manager.save_config()
+                    # 使用 save_config 方法設置 TinyPNG API 金鑰
+                    current_config = self.config_manager.config.copy()
+                    self.config_manager.save_config(
+                        ffmpeg_path=current_config.get("ffmpeg_path", ""),
+                        texture_packer_path=current_config.get("texture_packer_path", ""),
+                        tinypng_api_key=tinypng_key
+                    )
             return {"success": True}
         except Exception as e:
             logging.error(f"儲存設定失敗: {str(e)}")
@@ -217,11 +232,19 @@ class WebViewAPI:
     def extractPreviewFrames(self, params):
         """提取預覽影格"""
         try:
+            logging.info(f"extractPreviewFrames 被調用，參數：{params}")
             video_path = params.get('videoPath')
             fps = params.get('fps', 24)
             
-            if not video_path or not os.path.exists(video_path):
-                return {"success": False, "error": "影片檔案不存在"}
+            if not video_path:
+                logging.error("影片路徑為空")
+                return {"success": False, "error": "影片路徑為空"}
+            
+            if not os.path.exists(video_path):
+                logging.error(f"影片檔案不存在：{video_path}")
+                return {"success": False, "error": f"影片檔案不存在：{video_path}"}
+            
+            logging.info(f"開始提取預覽影格：{video_path}，FPS={fps}")
             
             from core.video import extract_frames, get_video_dimensions
             import hashlib
@@ -232,16 +255,27 @@ class WebViewAPI:
             preview_base = os.path.join(get_application_path(), "preview")
             frames_dir = os.path.join(preview_base, f"bg_preview_{video_hash}")
             
+            logging.info(f"預覽影格目錄：{frames_dir}")
+            
             # 清理舊的預覽影格
             if os.path.exists(frames_dir):
                 import shutil
+                logging.info(f"清理舊的預覽影格目錄：{frames_dir}")
                 shutil.rmtree(frames_dir, ignore_errors=True)
             
             os.makedirs(frames_dir, exist_ok=True)
+            logging.info(f"預覽目錄已創建：{frames_dir}")
             
-            logging.info(f"開始提取預覽影格：{video_path}，FPS={fps}")
+            # 獲取 Frame 縮放參數
+            enable_resize = params.get('enableResize', False)
+            target_width = params.get('targetWidth') if enable_resize else None
+            target_height = params.get('targetHeight') if enable_resize else None
+            resize_mode = params.get('resizeMode', 'stretch') if enable_resize else 'stretch'
+            
+            logging.info(f"縮放參數：enable_resize={enable_resize}, target_width={target_width}, target_height={target_height}, resize_mode={resize_mode}")
             
             # 提取影格
+            logging.info("開始調用 extract_frames...")
             frame_count = extract_frames(
                 video_path,
                 frames_dir,
@@ -249,8 +283,13 @@ class WebViewAPI:
                 self.config_manager.get_ffmpeg_path(),
                 "preview",
                 output_format="PNG",
-                quality=5
+                quality=5,
+                enable_resize=enable_resize,
+                target_width=target_width,
+                target_height=target_height,
+                resize_mode=resize_mode
             )
+            logging.info(f"extract_frames 完成，提取了 {frame_count} 個影格")
             
             # 收集預覽影格路徑（最多12個）
             frame_paths = sorted(glob.glob(os.path.join(frames_dir, "*.png")))[:12]
@@ -293,7 +332,16 @@ class WebViewAPI:
             root.destroy()
             
             if file_path and os.path.exists(file_path):
-                return {"success": True, "path": file_path}
+                # 獲取影片尺寸
+                from core.video import get_video_dimensions
+                width, height = get_video_dimensions(file_path, self.config_manager.get_ffmpeg_path())
+                
+                result = {"success": True, "path": file_path}
+                if width and height:
+                    result["width"] = width
+                    result["height"] = height
+                
+                return result
             else:
                 return {"success": False, "error": "未選擇檔案"}
         except Exception as e:
@@ -334,6 +382,10 @@ class WebViewAPI:
                 quality=params.get('quality', 5),
                 use_tinypng=params.get('useTinyPNG', False),
                 packer_choice=params.get('packerChoice', '自動選擇'),
+                enable_resize=params.get('enableResize', False),
+                target_width=params.get('targetWidth'),
+                target_height=params.get('targetHeight'),
+                resize_mode=params.get('resizeMode', 'stretch'),
                 enable_bg_removal=params.get('enableBgRemoval', False),
                 bg_removal_tolerance=params.get('bgRemovalTolerance', 10),
                 progress=None  # 暫時不支援進度回調
@@ -612,41 +664,48 @@ class WebViewUIManager:
         self.webview_window = None
         self.api = WebViewAPI(self)
         
-    def _get_html_path(self):
-        """取得 HTML 檔案路徑"""
-        if getattr(sys, 'frozen', False):
-            # PyInstaller 打包環境：資源在 sys._MEIPASS
-            if hasattr(sys, '_MEIPASS'):
-                base_path = sys._MEIPASS
+        # 緩存路徑，避免重複計算
+        self._base_path = None
+        self._html_path = None
+        self._static_dir = None
+    
+    def _get_base_path(self):
+        """取得基礎路徑（緩存結果）"""
+        if self._base_path is None:
+            if getattr(sys, 'frozen', False):
+                # PyInstaller 打包環境：資源在 sys._MEIPASS
+                if hasattr(sys, '_MEIPASS'):
+                    self._base_path = sys._MEIPASS
+                else:
+                    # 如果沒有 _MEIPASS，使用執行檔所在目錄
+                    self._base_path = os.path.dirname(sys.executable)
             else:
-                # 如果沒有 _MEIPASS，使用執行檔所在目錄
-                base_path = os.path.dirname(sys.executable)
-        else:
-            # 開發環境：使用應用程式路徑
-            base_path = get_application_path()
+                # 開發環境：使用應用程式路徑
+                self._base_path = get_application_path()
+        return self._base_path
+    
+    def _get_html_path(self):
+        """取得 HTML 檔案路徑（緩存結果）"""
+        if self._html_path is None:
+            base_path = self._get_base_path()
+            self._html_path = os.path.join(base_path, 'ui', 'webview', 'static', 'index.html')
+            
+            # 只在調試模式下檢查檔案存在性
+            if logging.getLogger().level <= logging.DEBUG:
+                if not os.path.exists(self._html_path):
+                    logging.error(f"HTML 檔案不存在：{self._html_path}")
+                    logging.error(f"base_path: {base_path}")
+                    logging.error(f"sys.frozen: {getattr(sys, 'frozen', False)}")
+                    logging.error(f"sys._MEIPASS: {getattr(sys, '_MEIPASS', 'N/A')}")
         
-        html_path = os.path.join(base_path, 'ui', 'webview', 'static', 'index.html')
-        
-        # 調試輸出
-        if not os.path.exists(html_path):
-            logging.error(f"HTML 檔案不存在：{html_path}")
-            logging.error(f"base_path: {base_path}")
-            logging.error(f"sys.frozen: {getattr(sys, 'frozen', False)}")
-            logging.error(f"sys._MEIPASS: {getattr(sys, '_MEIPASS', 'N/A')}")
-        
-        return html_path
+        return self._html_path
     
     def _get_static_dir(self):
-        """取得靜態資源目錄路徑"""
-        if getattr(sys, 'frozen', False):
-            # PyInstaller 打包環境：資源在 sys._MEIPASS
-            base_path = sys._MEIPASS
-        else:
-            # 開發環境：使用應用程式路徑
-            base_path = get_application_path()
-        
-        static_dir = os.path.join(base_path, 'ui', 'webview', 'static')
-        return static_dir
+        """取得靜態資源目錄路徑（緩存結果）"""
+        if self._static_dir is None:
+            base_path = self._get_base_path()
+            self._static_dir = os.path.join(base_path, 'ui', 'webview', 'static')
+        return self._static_dir
     
     def run(self, port=None, window_size=(1400, 900), debug=False):
         """
@@ -712,7 +771,13 @@ class WebViewUIManager:
             logging.info("使用者中斷（Ctrl+C）")
             os._exit(0)
         except Exception as e:
+            import traceback
             error_msg = str(e)
+            error_traceback = traceback.format_exc()
+            
+            # 記錄完整錯誤
+            logging.error(f"WebView UI 啟動失敗: {error_msg}", exc_info=True)
+            
             # 檢查是否為 WebView2 Runtime 相關錯誤
             if "webview2" in error_msg.lower() or "webview" in error_msg.lower():
                 full_error_msg = (
@@ -722,7 +787,18 @@ class WebViewUIManager:
                 )
                 logging.error(full_error_msg)
                 print(f"\n❌ {full_error_msg}\n")
+                print(f"詳細錯誤：{error_msg}\n")
             else:
-                logging.error(f"WebView UI 啟動失敗: {error_msg}", exc_info=True)
                 print(f"\n❌ WebView UI 啟動失敗: {error_msg}\n")
+                print("詳細錯誤訊息：")
+                print(error_traceback)
+            
+            # 暫停以便查看錯誤
+            print("\n按 Enter 鍵退出...")
+            try:
+                input()
+            except:
+                import time
+                time.sleep(5)
+            
             raise

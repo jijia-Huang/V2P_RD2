@@ -10,6 +10,7 @@ import logging
 import platform
 import base64
 import io
+import weakref
 from pathlib import Path
 from typing import Optional, Dict, Any
 
@@ -37,9 +38,31 @@ class WebViewAPI:
     """JavaScript-Python Bridge API for V2P Editor"""
     
     def __init__(self, manager):
-        self._manager = manager
+        # 使用弱引用避免循環引用和序列化問題
+        self._manager_ref = weakref.ref(manager)
         self.inspector = ProjectInspector()
         self.report: Optional[InspectionReport] = None
+    
+    @property
+    def _manager(self):
+        """取得管理器實例（通過弱引用）"""
+        manager = self._manager_ref()
+        if manager is None:
+            raise RuntimeError("管理器已被回收")
+        return manager
+    
+    def __getstate__(self):
+        """控制序列化，避免循環引用"""
+        # 不序列化任何內容，pywebview 會重新創建對象
+        # 弱引用無法序列化，所以返回空字典
+        return {}
+    
+    def __setstate__(self, state):
+        """反序列化"""
+        # 這些屬性會在運行時重新設置
+        self._manager_ref = None
+        self.inspector = None
+        self.report = None
     
     def inspectFolder(self, folder_path: str) -> Dict[str, Any]:
         """檢查 V2P 輸出資料夾"""
@@ -230,35 +253,50 @@ class WebViewUIManager:
     
     def __init__(self):
         self.api = WebViewAPI(self)
+        self._base_path = None
         self._static_dir = None
+        self._html_path = None
     
-    def _get_static_dir(self) -> Path:
-        """取得靜態檔案目錄"""
-        if self._static_dir is None:
+    def _get_base_path(self) -> Path:
+        """取得基礎路徑（緩存結果）"""
+        if self._base_path is None:
             if getattr(sys, 'frozen', False):
                 # PyInstaller 打包環境：資源在 sys._MEIPASS
                 if hasattr(sys, '_MEIPASS'):
-                    base_path = Path(sys._MEIPASS)
+                    self._base_path = Path(sys._MEIPASS)
                 else:
                     # 如果沒有 _MEIPASS，使用執行檔所在目錄
-                    base_path = Path(os.path.dirname(sys.executable))
-                self._static_dir = base_path / "v2p_editor" / "webview_ui" / "static"
+                    self._base_path = Path(os.path.dirname(sys.executable))
             else:
                 # 開發環境：使用當前檔案路徑
                 current_file = Path(__file__).resolve()
-                self._static_dir = current_file.parent / "static"
+                self._base_path = current_file.parent.parent
+        
+        return self._base_path
+    
+    def _get_static_dir(self) -> Path:
+        """取得靜態檔案目錄（緩存結果）"""
+        if self._static_dir is None:
+            base_path = self._get_base_path()
+            if getattr(sys, 'frozen', False):
+                self._static_dir = base_path / "v2p_editor" / "webview_ui" / "static"
+            else:
+                self._static_dir = base_path / "webview_ui" / "static"
             
-            # 調試輸出
-            if not self._static_dir.exists():
-                logging.error(f"靜態資源目錄不存在：{self._static_dir}")
-                logging.error(f"sys.frozen: {getattr(sys, 'frozen', False)}")
-                logging.error(f"sys._MEIPASS: {getattr(sys, '_MEIPASS', 'N/A')}")
+            # 只在調試模式下檢查目錄存在性
+            if logging.getLogger().level <= logging.DEBUG:
+                if not self._static_dir.exists():
+                    logging.error(f"靜態資源目錄不存在：{self._static_dir}")
+                    logging.error(f"sys.frozen: {getattr(sys, 'frozen', False)}")
+                    logging.error(f"sys._MEIPASS: {getattr(sys, '_MEIPASS', 'N/A')}")
         
         return self._static_dir
     
     def _get_html_path(self) -> Path:
-        """取得 HTML 檔案路徑"""
-        return self._get_static_dir() / "index.html"
+        """取得 HTML 檔案路徑（緩存結果）"""
+        if self._html_path is None:
+            self._html_path = self._get_static_dir() / "index.html"
+        return self._html_path
     
     def run(self, initial_path: Optional[str] = None, window_size=(1280, 780), debug=False):
         """

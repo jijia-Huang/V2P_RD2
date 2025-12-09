@@ -165,12 +165,12 @@ class ConfigManager:
             logging.info(f"TexturePacker 路徑：{texture_packer_path}")
             logging.info(f"TinyPNG API 金鑰：{'已設定' if tinypng_api_key else '未設定'}")
             
-            # 驗證路徑
-            if not os.path.exists(ffmpeg_path):
+            # 驗證路徑（只驗證非空的路徑）
+            if ffmpeg_path and not os.path.exists(ffmpeg_path):
                 logging.error(f"FFmpeg 路徑無效：{ffmpeg_path}")
                 raise ConfigError("FFmpeg 路徑無效")
             
-            if not os.path.exists(texture_packer_path):
+            if texture_packer_path and not os.path.exists(texture_packer_path):
                 logging.error(f"TexturePacker 路徑無效：{texture_packer_path}")
                 raise ConfigError("TexturePacker 路徑無效")
             
