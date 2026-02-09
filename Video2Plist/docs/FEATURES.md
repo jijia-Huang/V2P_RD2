@@ -589,10 +589,10 @@ WARNING - JPG 格式不支援透明邊，自動降級為黑邊模式
 
 ### 3.1 整體架構
 
-V2P 使用 Gradio 框架構建 Web 介面，採用模組化設計：
+V2P 使用 pywebview 框架構建桌面 WebView 介面，採用模組化設計：
 
 ```
-UIManager
+WebViewUIManager
 ├── Settings Tab (設定頁籤)
 ├── Main Tab (轉換頁籤)
 ├── Output Tab (輸出頁籤)

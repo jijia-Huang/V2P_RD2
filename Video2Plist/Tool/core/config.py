@@ -152,6 +152,12 @@ class ConfigManager:
                     raise ConfigError("設定檔格式錯誤")
                 logging.info(f"載入的設定：{saved_config}")
                 self.config.update(saved_config)
+            
+            # 若 config 裡存的 ffmpeg 路徑不存在（換目錄、打包後暫存路徑失效等），改回同目錄預設
+            saved_ffmpeg = (self.config.get("ffmpeg_path") or "").strip()
+            if saved_ffmpeg and not os.path.exists(saved_ffmpeg) and local_ffmpeg:
+                logging.info(f"已儲存的 FFmpeg 路徑不存在，改為同目錄預設：{local_ffmpeg}")
+                self.config["ffmpeg_path"] = local_ffmpeg
         except yaml.YAMLError as e:
             raise ConfigError("設定檔解析失敗", details=str(e))
         except Exception as e:
@@ -165,18 +171,22 @@ class ConfigManager:
             logging.info(f"TexturePacker 路徑：{texture_packer_path}")
             logging.info(f"TinyPNG API 金鑰：{'已設定' if tinypng_api_key else '未設定'}")
             
-            # 驗證路徑
-            if not os.path.exists(ffmpeg_path):
+            # 驗證路徑（只驗證非空的路徑）
+            if ffmpeg_path and not os.path.exists(ffmpeg_path):
                 logging.error(f"FFmpeg 路徑無效：{ffmpeg_path}")
                 raise ConfigError("FFmpeg 路徑無效")
             
-            if not os.path.exists(texture_packer_path):
+            if texture_packer_path and not os.path.exists(texture_packer_path):
                 logging.error(f"TexturePacker 路徑無效：{texture_packer_path}")
                 raise ConfigError("TexturePacker 路徑無效")
             
+            # 若目前是「同目錄預設」就存空字串，之後移動 exe 仍會抓新目錄的 ffmpeg
+            local_ffmpeg = self.get_local_ffmpeg()
+            path_to_save = "" if (ffmpeg_path and local_ffmpeg and os.path.normpath(ffmpeg_path) == os.path.normpath(local_ffmpeg)) else (ffmpeg_path or "")
+            
             # 更新設定
             self.config.update({
-                "ffmpeg_path": ffmpeg_path,
+                "ffmpeg_path": path_to_save,
                 "texture_packer_path": texture_packer_path,
                 "tinypng_api_key": tinypng_api_key
             })
@@ -201,17 +211,20 @@ class ConfigManager:
             raise ConfigError("儲存設定失敗", details=str(e))
     
     def get_local_ffmpeg(self):
-        """檢查本地 FFmpeg"""
+        """檢查本地 FFmpeg：優先同目錄下的 ffmpeg/ffmpeg.exe"""
         app_dir = get_application_path()
-        ffmpeg_path = os.path.join(app_dir, "ffmpeg.exe")
-        
+        # 預設抓同目錄的 ffmpeg/ffmpeg.exe（與打包後 dist/ffmpeg/ffmpeg.exe 一致）
+        ffmpeg_path = os.path.join(app_dir, "ffmpeg", "ffmpeg.exe")
+        if not os.path.exists(ffmpeg_path):
+            # 相容：也嘗試舊位置（應用目錄直下的 ffmpeg.exe）
+            ffmpeg_path = os.path.join(app_dir, "ffmpeg.exe")
         if os.path.exists(ffmpeg_path):
             try:
-                subprocess.run([ffmpeg_path, "-version"], 
-                             capture_output=True, 
-                             check=True)
+                subprocess.run([ffmpeg_path, "-version"],
+                              capture_output=True,
+                              check=True)
                 return ffmpeg_path.replace("\\", "/")
-            except:
+            except Exception:
                 pass
         return ""
     
@@ -242,8 +255,11 @@ class ConfigManager:
             logging.error(f"儲存使用者偏好設定失敗：{str(e)}")
     
     def get_ffmpeg_path(self):
-        """獲取 FFmpeg 路徑"""
-        return self._normalize_path(self.config.get("ffmpeg_path", ""))
+        """獲取 FFmpeg 路徑；若未設定或為空則用同目錄預設（移動 exe 後仍有效）"""
+        stored = (self.config.get("ffmpeg_path") or "").strip()
+        if not stored:
+            return self._normalize_path(self.get_local_ffmpeg() or "")
+        return self._normalize_path(stored)
     
     def get_texture_packer_path(self):
         """獲取 TexturePacker 路徑"""

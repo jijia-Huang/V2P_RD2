@@ -102,7 +102,7 @@ V2P 是一款桌面工具，專為 Cocos2d-x 遊戲開發者設計，用於將�
 **功能描述**: 在轉換前預覽上傳的視頻內容。
 
 **實現方式**:
-- 使用 Gradio 的 Video 元件
+- 使用 WebView 介面的 HTML5 Video 元件
 - 上傳後自動載入預覽
 - 使用 FFmpeg 驗證視頻可讀性
 
@@ -249,9 +249,8 @@ v2p.exe [選項]
 選項:
   -h, --help            顯示說明訊息
   -v, --version         顯示版本資訊
-  --port PORT           指定服務埠號（預設：7866）
-  --no-browser          啟動後不自動開啟瀏覽器
   --log-level LEVEL     設置日誌記錄級別
+  --debug               啟用 WebView 開發者工具
 ```
 
 **範例**:
@@ -259,8 +258,8 @@ v2p.exe [選項]
 # 使用 DEBUG 級別日誌啟動
 v2p.exe --log-level DEBUG
 
-# 指定埠號並不開啟瀏覽器
-v2p.exe --port 8000 --no-browser
+# 啟用開發者工具（方便除錯）
+v2p.exe --debug
 ```
 
 ### 2.3 Lua 整合
@@ -356,7 +355,7 @@ loader.clearCache()
                   │
 ┌─────────────────┴───────────────────────┐
 │            UI 管理層                      │
-│    Gradio 介面、事件處理                 │
+│    WebView 介面、事件處理                │
 └─────────────────┬───────────────────────┘
                   │
 ┌─────────────────┴───────────────────────┐
@@ -376,15 +375,15 @@ loader.clearCache()
 - `core/file_utils.py`: 文件工具
 - `core/logger.py`: 日誌系統
 - `core/exceptions/`: 異常定義
-- `ui/manager.py`: UI 管理器
-- `ui/tabs/`: 功能頁籤
+- `ui/webview/`: WebView UI 管理器
+- `ui/runtime.py`: UI 啟動邏輯
 
 ### 3.2 技術選型
 
 **開發語言**: Python 3.8+
 
 **核心依賴**:
-- **Gradio 5.16.2**: Web UI 框架
+- **pywebview 5.0.0+**: WebView 桌面 UI 框架
 - **PyYAML 6.0.1**: 配置檔案解析
 - **Pillow 11.1.0**: 圖像處理
 - **tinify**: TinyPNG API 客戶端
@@ -834,7 +833,7 @@ end
 - FFmpeg 文檔: https://ffmpeg.org/documentation.html
 - TexturePacker 文檔: https://www.codeandweb.com/texturepacker/documentation
 - TinyPNG API: https://tinypng.com/developers
-- Gradio 文檔: https://www.gradio.app/docs/
+- pywebview 文檔: https://pywebview.flowrl.com/
 
 ### 9.3 變更歷史
 

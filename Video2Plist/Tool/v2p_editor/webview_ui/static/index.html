@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>V2P Editor Viewer</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="app-container">
+        <header class="header">
+            <h1>🔍 V2P Editor Viewer</h1>
+            <div class="status" id="status">請選擇或拖曳 V2P 輸出資料夾</div>
+        </header>
+
+        <div class="control-panel">
+            <div class="control-row">
+                <label>輸出資料夾：</label>
+                <input type="text" id="folder-path" placeholder="請選擇或輸入資料夾路徑" />
+                <button class="btn btn-primary" onclick="browseFolder()">瀏覽...</button>
+                <button class="btn btn-secondary" onclick="loadFolder()">載入資料夾</button>
+                <button class="btn btn-secondary" onclick="copyReport()">複製檢查報告</button>
+            </div>
+        </div>
+
+        <div class="content-panel" id="content-panel" style="display: none;">
+            <div class="row">
+                <!-- 左側：Metadata 和檔案狀態 -->
+                <div class="column scale-2">
+                    <!-- Metadata 面板 -->
+                    <div class="panel">
+                        <div class="panel-header">Metadata</div>
+                        <div class="panel-content">
+                            <div class="info-row">
+                                <span class="info-label">名稱：</span>
+                                <span class="info-value" id="info-name">--</span>
+                            </div>
+                            <div class="info-row">
+                                <span class="info-label">FPS：</span>
+                                <span class="info-value" id="info-fps">--</span>
+                            </div>
+                            <div class="info-row">
+                                <span class="info-label">影格數：</span>
+                                <span class="info-value" id="info-frame-count">--</span>
+                            </div>
+                            <div class="info-row">
+                                <span class="info-label">Atlas 數：</span>
+                                <span class="info-value" id="info-plist-count">--</span>
+                            </div>
+                            <div class="info-row">
+                                <span class="info-label">最大尺寸：</span>
+                                <span class="info-value" id="info-max-size">--</span>
+                            </div>
+                            <div class="info-row">
+                                <span class="info-label">Frame Size：</span>
+                                <span class="info-value" id="info-frame-size">--</span>
+                            </div>
+                            <div class="info-row">
+                                <span class="info-label">建立時間：</span>
+                                <span class="info-value" id="info-creation-time">--</span>
+                            </div>
+                            <div class="info-row">
+                                <span class="info-label">工具版本：</span>
+                                <span class="info-value" id="info-tool-version">--</span>
+                            </div>
+                            <div class="info-row">
+                                <span class="info-label">輸出格式：</span>
+                                <span class="info-value" id="info-output-format">--</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 檔案狀態面板 -->
+                    <div class="panel">
+                        <div class="panel-header">檔案狀態</div>
+                        <div class="panel-content">
+                            <table class="file-table" id="file-table">
+                                <thead>
+                                    <tr>
+                                        <th>名稱</th>
+                                        <th>狀態</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="file-table-body">
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- 錯誤/警示面板 -->
+                    <div class="panel">
+                        <div class="panel-header">錯誤 / 警示</div>
+                        <div class="panel-content">
+                            <div class="log-content" id="log-content">
+                                尚未進行檢查。
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 右側：播放預覽和影格列表 -->
+                <div class="column scale-3">
+                    <!-- 播放預覽面板 -->
+                    <div class="panel">
+                        <div class="panel-header">播放預覽</div>
+                        <div class="panel-content">
+                            <div class="preview-container">
+                                <div class="preview-image-wrapper">
+                                    <img id="preview-image" src="" alt="預覽影格" style="display: none;" />
+                                    <div id="preview-placeholder" class="preview-placeholder">
+                                        尚未載入任何影格
+                                    </div>
+                                </div>
+                                <div class="preview-controls">
+                                    <button class="btn btn-small" onclick="showPreviousFrame()">◀ 上一幀</button>
+                                    <button class="btn btn-small" onclick="startPlayback()">播放</button>
+                                    <button class="btn btn-small" onclick="pausePlayback()">暫停</button>
+                                    <button class="btn btn-small" onclick="showNextFrame()">下一幀 ▶</button>
+                                    <label class="checkbox-label">
+                                        <input type="checkbox" id="loop-checkbox" checked /> 循環播放
+                                    </label>
+                                    <label class="fps-label">
+                                        播放 FPS：
+                                        <input type="number" id="fps-input" min="1" max="120" value="24" step="1" />
+                                    </label>
+                                    <span class="frame-counter" id="frame-counter">0/0</span>
+                                </div>
+                                <div class="frame-detail" id="frame-detail">尚未載入任何影格</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 影格列表面板 -->
+                    <div class="panel">
+                        <div class="panel-header">影格列表</div>
+                        <div class="panel-content">
+                            <div class="frames-container">
+                                <table class="frames-table" id="frames-table">
+                                    <thead>
+                                        <tr>
+                                            <th>#</th>
+                                            <th>檔名</th>
+                                            <th>來自圖集</th>
+                                            <th>尺寸</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="frames-table-body">
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
+

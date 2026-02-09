@@ -7,14 +7,24 @@ import sys
 import logging
 from .exceptions import FileError
 
+# 緩存應用程式路徑，避免重複計算
+_application_path_cache = None
+
 def get_application_path():
-    """獲取應用程式路徑"""
+    """獲取應用程式路徑（緩存結果以提高性能）"""
+    global _application_path_cache
+    
+    if _application_path_cache is not None:
+        return _application_path_cache
+    
     try:
         if getattr(sys, 'frozen', False):
             app_path = os.path.dirname(sys.executable)
         else:
             app_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            
+        
+        # 緩存結果
+        _application_path_cache = app_path
         logging.debug(f"應用程式路徑：{app_path}")
         return app_path
         
