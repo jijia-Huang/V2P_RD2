@@ -92,17 +92,18 @@ pip install pyinstaller
 
 ### 步驟 3：主專案打包
 
-在 `Tool/` 目錄下執行：
+在 `Tool/` 目錄下執行（**推薦使用 build_v2p.py**，會自動將 `ffmpeg` 複製到 dist）：
 
 ```bash
-# 方法 1：直接使用 pyinstaller 命令（推薦）
-pyinstaller v2p.spec
+# 方法 1：一鍵打包並複製 ffmpeg 到 dist（推薦）
+python build_v2p.py
 
-# 方法 2：如果 pyinstaller 命令不可用，使用 python -m
-python -m PyInstaller.__main__ v2p.spec
+# 方法 2：僅 PyInstaller，之後需手動複製 ffmpeg
+pyinstaller v2p.spec
+xcopy /E /I ffmpeg dist\ffmpeg
 ```
 
-打包完成後，可執行檔位於 `dist/v2p.exe`
+打包完成後，可執行檔位於 `dist/v2p.exe`，預設會使用同目錄的 `dist/ffmpeg/ffmpeg.exe`（無需在設定中指定路徑）。
 
 ### 步驟 4：Editor 打包
 
@@ -126,8 +127,10 @@ python -m PyInstaller.__main__ v2p_editor.spec
 # 清理之前的打包結果（可選）
 rmdir /s /q build dist
 
-# 重新打包
-pyinstaller v2p.spec
+# 重新打包主專案（含複製 ffmpeg 到 dist）
+python build_v2p.py
+
+# 或僅 Editor
 pyinstaller v2p_editor.spec
 ```
 
