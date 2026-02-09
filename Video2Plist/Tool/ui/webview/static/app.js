@@ -710,7 +710,8 @@ async function handleConvert() {
     const enableBgRemovalCheckbox = document.getElementById('enable-bg-removal-convert');
     const enableBgRemoval = enableBgRemovalCheckbox ? (enableBgRemovalCheckbox.checked && outputFormat === 'PNG') : false;
     const bgRemovalToleranceEl = document.getElementById('bg-removal-tolerance-display');
-    const bgRemovalTolerance = bgRemovalToleranceEl ? (parseInt(bgRemovalToleranceEl.value) || 10) : 10;
+    const _parsed = bgRemovalToleranceEl ? parseInt(bgRemovalToleranceEl.value, 10) : NaN;
+    const bgRemovalTolerance = (!isNaN(_parsed) && _parsed >= 0) ? _parsed : 10;
     
     // Frame 縮放參數
     const enableFrameResizeCheckbox = document.getElementById('enable-frame-resize');
@@ -872,7 +873,8 @@ async function loadBgRemovalTolerance() {
             const enableBgRemovalCheckbox = document.getElementById('enable-bg-removal-convert');
             
             if (toleranceDisplay) {
-                toleranceDisplay.value = tolerance || 10;
+                // 容差 0 是有效值，不可用 || 10 否則 0 會被改成 10
+                toleranceDisplay.value = (tolerance !== undefined && tolerance !== null && tolerance !== '') ? tolerance : 10;
             }
             
             if (enableBgRemovalCheckbox) {
