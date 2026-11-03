@@ -371,55 +371,31 @@ class WebViewAPI:
                 if not video_path:
                     return {"success": False, "error": "影片檔案不存在，請使用檔案選擇功能選擇檔案"}
             
-            # 執行轉換
-            result = self.conversion_service.convert(
-                video=video_path,
-                fps=params.get('fps', 24),
-                output_name=params.get('outputName', 'output'),
-                max_width=params.get('maxWidth', 2048),
-                max_height=params.get('maxHeight', 2048),
-                output_format=params.get('outputFormat', 'PNG'),
-                quality=params.get('quality', 5),
-                use_tinypng=params.get('useTinyPNG', False),
-                packer_choice=params.get('packerChoice', '自動選擇'),
-                enable_resize=params.get('enableResize', False),
-                target_width=params.get('targetWidth'),
-                target_height=params.get('targetHeight'),
-                resize_mode=params.get('resizeMode', 'stretch'),
-                enable_bg_removal=params.get('enableBgRemoval', False),
-                bg_removal_tolerance=params.get('bgRemovalTolerance', 10),
-                progress=None  # 暫時不支援進度回調
-            )
-            
-            # 檢查結果
-            logging.info(f"轉換結果類型：{type(result)}, 內容：{result}")
-            
-            if result:
-                if isinstance(result, dict):
-                    if result.get('success'):
-                        return {
-                            "success": True,
-                            "outputPath": result.get('output_path', '')
-                        }
-                    else:
-                        return {
-                            "success": False,
-                            "error": result.get('error', '轉換失敗')
-                        }
-                elif isinstance(result, str):
-                    # 如果返回的是字串，檢查是否包含成功標記
-                    if "✅" in result or "成功" in result:
-                        return {
-                            "success": True,
-                            "outputPath": "videos 目錄"
-                        }
-                    else:
-                        return {"success": False, "error": result}
-                else:
-                    # 其他類型的結果
-                    return {"success": False, "error": f"未知結果類型：{type(result)}"}
-            else:
-                return {"success": False, "error": "轉換失敗：未返回結果"}
+            # 執行轉換（成功後會寫回「上次設定」，CLI 可直接沿用）
+            from core.error_handler import V2PError
+            try:
+                result = self.conversion_service.run(
+                    video=video_path,
+                    fps=params.get('fps', 24),
+                    output_name=params.get('outputName', 'output'),
+                    max_width=params.get('maxWidth', 2048),
+                    max_height=params.get('maxHeight', 2048),
+                    output_format=params.get('outputFormat', 'PNG'),
+                    quality=params.get('quality', 5),
+                    use_tinypng=params.get('useTinyPNG', False),
+                    packer_choice=params.get('packerChoice', '自動選擇'),
+                    enable_resize=params.get('enableResize', False),
+                    target_width=params.get('targetWidth'),
+                    target_height=params.get('targetHeight'),
+                    resize_mode=params.get('resizeMode', 'stretch'),
+                    enable_bg_removal=params.get('enableBgRemoval', False),
+                    bg_removal_tolerance=params.get('bgRemovalTolerance', 10),
+                )
+                return {"success": True, "outputPath": result.get("output_dir", "")}
+            except V2PError as e:
+                logging.error(f"轉換失敗：{e.error_type.value} - {e.message}")
+                return {"success": False, "error": f"❌ {e.error_type.value}：{e.message}"}
+
         except Exception as e:
             logging.error(f"轉換失敗: {str(e)}", exc_info=True)
             return {"success": False, "error": str(e)}

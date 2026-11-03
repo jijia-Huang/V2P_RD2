@@ -15,7 +15,9 @@ def parse_args():
     """解析命令列參數"""
     parser = argparse.ArgumentParser(
         description='V2P 工具 - 影片轉換為 Cocos2d 動畫工具',
-        epilog='範例：python v2p.py --log-level DEBUG'
+        epilog='範例：python v2p.py --log-level DEBUG\n'
+               '命令列模式：python v2p.py {settings,convert,check,bg-sweep,inspect,info} --help',
+        formatter_class=argparse.RawDescriptionHelpFormatter
     )
     
     parser.add_argument(
@@ -42,8 +44,15 @@ def parse_args():
 
 def main():
     """主程式"""
+    import sys
     import traceback
-    
+
+    # 命令列模式：python v2p.py <子命令> ...（不開視窗、不等待按鍵，輸出 JSON）
+    if len(sys.argv) > 1 and sys.argv[1] in ("settings", "convert", "check", "bg-sweep", "inspect", "info",
+                                              "--verbose", "--quiet"):
+        from cli import main as cli_main
+        sys.exit(cli_main(sys.argv[1:]))
+
     # 先設置基本日誌，確保錯誤能被記錄
     try:
         setup_logger(logging.INFO)

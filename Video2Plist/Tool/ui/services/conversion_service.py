@@ -4,9 +4,10 @@
 """
 import logging
 
-from core.video import process_video
+from core.video import process_video, run_conversion
 from core.error_handler import handle_error
 from core.exceptions import ConfigError, FileError, ConversionError
+from core.last_settings import save_last_settings
 
 
 class ConversionService:
@@ -14,6 +15,87 @@ class ConversionService:
 
     def __init__(self, config_manager):
         self.config_manager = config_manager
+
+    def run(self,
+            *,
+            video,
+            fps,
+            output_name,
+            max_width,
+            max_height,
+            output_format,
+            quality,
+            use_tinypng=False,
+            packer_choice="自動選擇",
+            enable_resize=False,
+            target_width=None,
+            target_height=None,
+            resize_mode="stretch",
+            enable_bg_removal=False,
+            bg_removal_tolerance=10,
+            tinypng_api_key=None,
+            ffmpeg_path=None,
+            texture_packer_path=None,
+            output_root=None,
+            update_preview_prefs=True,
+            save_as_last=True,
+            progress=None):
+        """
+        執行影片轉換（結構化結果）
+
+        Returns:
+            dict: run_conversion 的結果
+        Raises:
+            ConfigError / FileError / ConversionError / 其他例外
+        """
+        ffmpeg_path = ffmpeg_path or self.config_manager.get_ffmpeg_path()
+        texture_packer_path = texture_packer_path or self.config_manager.get_texture_packer_path()
+        effective_tinypng = tinypng_api_key or self.config_manager.get_tinypng_api_key()
+
+        result = run_conversion(
+            video,
+            fps,
+            output_name,
+            max_width,
+            max_height,
+            ffmpeg_path,
+            texture_packer_path,
+            output_format,
+            quality,
+            use_tinypng=use_tinypng,
+            tinypng_api_key=effective_tinypng,
+            packer_choice=packer_choice,
+            enable_resize=enable_resize,
+            target_width=target_width,
+            target_height=target_height,
+            resize_mode=resize_mode,
+            enable_bg_removal=enable_bg_removal,
+            bg_removal_tolerance=bg_removal_tolerance,
+            config_manager=self.config_manager,
+            output_root=output_root,
+            update_preview_prefs=update_preview_prefs,
+            progress=progress,
+        )
+
+        if save_as_last:
+            save_last_settings(self.config_manager, {
+                "video_path": result.get("video_path", video),
+                "output_name": output_name,
+                "fps": fps,
+                "max_width": max_width,
+                "max_height": max_height,
+                "output_format": output_format,
+                "quality": quality,
+                "use_tinypng": use_tinypng,
+                "packer_choice": packer_choice,
+                "enable_resize": enable_resize,
+                "target_width": target_width,
+                "target_height": target_height,
+                "resize_mode": resize_mode,
+                "enable_bg_removal": enable_bg_removal,
+                "bg_removal_tolerance": bg_removal_tolerance,
+            })
+        return result
 
     def convert(self,
                 *,
@@ -38,7 +120,7 @@ class ConversionService:
                 progress=None,
                 raise_exception=False):
         """
-        執行影片轉換
+        執行影片轉換（舊介面：回傳 "✅/❌" 訊息字串）
         """
         ffmpeg_path = ffmpeg_path or self.config_manager.get_ffmpeg_path()
         texture_packer_path = texture_packer_path or self.config_manager.get_texture_packer_path()
@@ -77,4 +159,3 @@ class ConversionService:
             if raise_exception:
                 raise
             return handle_error(error, ui_component=True)
-

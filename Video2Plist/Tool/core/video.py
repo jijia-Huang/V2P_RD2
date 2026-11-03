@@ -2,6 +2,7 @@
 影片處理相關功能
 """
 import os
+import re
 import glob
 import json
 import time
@@ -320,7 +321,10 @@ def save_metadata(output_folder, output_name, settings):
             "original_size": settings.get("original_size", ""),
             "frame_resize_enabled": settings.get("frame_resize_enabled", False),
             "frame_size": settings.get("frame_size", ""),
-            "resize_mode": settings.get("resize_mode", "")
+            "resize_mode": settings.get("resize_mode", ""),
+            # 去背相關資訊
+            "bg_removal_enabled": settings.get("bg_removal_enabled", False),
+            "bg_removal_tolerance": settings.get("bg_removal_tolerance")
         }
 
         metadata_path = os.path.join(output_folder, f"{output_name}_metadata.json")
@@ -385,9 +389,86 @@ def process_video(mp4_file,
         bg_removal_tolerance: 去背容差值
         ui_manager: UI 管理器
         progress: 可選的進度回呼物件
-    
+
     Returns:
-        str: 處理結果訊息
+        str: 處理結果訊息（"✅ ..." 或 "❌ ..."，供舊 UI 使用）
+    """
+    try:
+        run_conversion(
+            mp4_file, fps, output_name, max_width, max_height,
+            ffmpeg_path, texture_packer_path,
+            output_format=output_format,
+            quality=quality,
+            use_tinypng=use_tinypng,
+            tinypng_api_key=tinypng_api_key,
+            packer_choice=packer_choice,
+            enable_resize=enable_resize,
+            target_width=target_width,
+            target_height=target_height,
+            resize_mode=resize_mode,
+            enable_bg_removal=enable_bg_removal,
+            bg_removal_tolerance=bg_removal_tolerance,
+            config_manager=config_manager,
+            progress=progress,
+        )
+        return "✅ 處理完成！"
+
+    except (FileError, ConfigError, ConversionError) as e:
+        logging.error(f"{e.error_type.value} - {e.message}")
+        if e.details:
+            logging.debug(f"詳細錯誤：{e.details}")
+        return f"❌ {e.error_type.value}：{e.message}"
+
+    except Exception as e:
+        logging.error(f"未預期的錯誤：{str(e)}", exc_info=True)
+        return f"❌ 處理失敗：{str(e)}"
+
+
+def _clear_previous_outputs(output_dir, output_name):
+    """刪除同名的舊輸出（避免重跑後殘留多餘的 plist / 材質）"""
+    pattern = re.compile(rf"^{re.escape(output_name)}_(\d+\.(plist|png|jpg)|metadata\.json)$", re.IGNORECASE)
+    removed = 0
+    for name in os.listdir(output_dir):
+        if pattern.match(name):
+            os.remove(os.path.join(output_dir, name))
+            removed += 1
+    if removed:
+        logging.info(f"已清除 {removed} 個舊輸出檔案：{output_dir}")
+
+
+def run_conversion(mp4_file,
+                   fps,
+                   output_name,
+                   max_width,
+                   max_height,
+                   ffmpeg_path,
+                   texture_packer_path,
+                   output_format="PNG",
+                   quality=5,
+                   use_tinypng=False,
+                   tinypng_api_key=None,
+                   packer_choice="自動選擇",
+                   enable_resize=False,
+                   target_width=None,
+                   target_height=None,
+                   resize_mode="stretch",
+                   enable_bg_removal=False,
+                   bg_removal_tolerance=10,
+                   config_manager=None,
+                   output_root=None,
+                   update_preview_prefs=True,
+                   progress=None):
+    """執行影片轉換（結構化版本，供 CLI / 服務層使用）
+
+    與 process_video 參數相同，另外：
+        output_root: 輸出根目錄（預設為工具目錄下的 videos/）
+        update_preview_prefs: 是否把本次影格目錄寫回 preferences（GUI 去背預覽用）
+
+    Returns:
+        dict: 轉換結果（output_dir、output_name、frame_count、plist_count、settings...）
+
+    Raises:
+        FileError / ConfigError / ConversionError
     """
     temp_folder = None
     try:
@@ -397,6 +478,11 @@ def process_video(mp4_file,
 
         if not output_name:
             raise ConfigError("請輸入輸出名稱")
+
+        # 輸出名稱一律加上 v2p_ 前綴（資料夾與檔名一致，移動 exe 後路徑仍可辨識）
+        output_name = (output_name or "").strip()
+        if not output_name.startswith("v2p_"):
+            output_name = "v2p_" + output_name
 
         video_path = getattr(mp4_file, "name", mp4_file)
         if not video_path:
@@ -417,7 +503,12 @@ def process_video(mp4_file,
             logging.info(f"原始影片尺寸：{original_width}x{original_height}")
 
         # 確保輸出目錄存在
-        output_dir = ensure_output_dir(output_name)
+        if output_root:
+            get_output_dir(output_name)  # 沿用資料夾名稱驗證
+            output_dir = os.path.join(os.path.abspath(output_root), output_name)
+            os.makedirs(output_dir, exist_ok=True)
+        else:
+            output_dir = ensure_output_dir(output_name)
 
         # 詳細記錄處理參數
         logging.info(f"開始處理影片：{video_path}")
@@ -432,8 +523,10 @@ def process_video(mp4_file,
             logging.info("Frame 縮放：未啟用")
         logging.info(f"使用工具：FFmpeg={ffmpeg_path}, TexturePacker={texture_packer_path}")
 
-        # 記錄臨時目錄
+        # 記錄臨時目錄（先清掉上次中斷殘留的影格）
         temp_folder = os.path.join(get_application_path(), "temp", output_name)
+        if os.path.exists(temp_folder):
+            shutil.rmtree(temp_folder, ignore_errors=True)
         logging.info(f"建立臨時目錄：{temp_folder}")
 
         # 記錄影格提取
@@ -449,16 +542,20 @@ def process_video(mp4_file,
         )
         logging.info(f"成功提取 {frame_count} 個影格")
 
+        _safe_progress(progress, 0.2, desc=f"已提取 {frame_count} 個影格")
+
         # 保存影格目錄資訊供去背預覽使用（更新為當前的工作影格）
-        config_manager.save_preferences({
-            "preview_frames_dir": frames_dir,
-            "preview_frame_count": frame_count,
-            "preview_fps": fps,
-            "preview_video_path": video_path,
-            "preview_temp_folder": temp_folder  # 保存臨時目錄路徑，供後續清理
-        })
-        
-        logging.info(f"已更新影格目錄資訊：{frames_dir}")
+        if config_manager is not None and update_preview_prefs:
+            config_manager.save_preferences({
+                "preview_frames_dir": frames_dir,
+                "preview_frame_count": frame_count,
+                "preview_fps": fps,
+                "preview_video_path": video_path,
+                "preview_temp_folder": temp_folder  # 保存臨時目錄路徑，供後續清理
+            })
+            logging.info(f"已更新影格目錄資訊：{frames_dir}")
+
+        bg_removal_result = None
 
         # 去背處理
         if enable_bg_removal and output_format.upper() == "PNG":
@@ -498,30 +595,36 @@ def process_video(mp4_file,
                     logging.warning(f"部分影格去背失敗：{result['failed']}/{result['total']}")
                 
                 logging.info(f"去背完成：成功 {result['success']}/{result['total']} 幀")
+                bg_removal_result = {
+                    "success": result['success'],
+                    "failed": result['failed'],
+                    "total": result['total'],
+                }
             except Exception as e:
                 logging.error(f"去背處理失敗：{str(e)}", exc_info=True)
                 # 去背失敗不應該阻止整個流程，繼續處理
                 logging.warning("去背處理失敗，將使用原始影格繼續處理")
+                bg_removal_result = {"error": str(e)}
+
+            # 用去背結果覆蓋原影格（filter_X.png → X.png），
+            # 讓兩種打包器都只會看到一份影格、且影格名稱一致
+            replaced = 0
+            for filtered in glob.glob(os.path.join(frames_dir, "filter_*.png")):
+                original = os.path.join(frames_dir, os.path.basename(filtered)[len("filter_"):])
+                os.replace(filtered, original)
+                replaced += 1
+            if replaced:
+                logging.info(f"去背已啟用，使用 {replaced} 個去背的圖片進行打包")
+            else:
+                logging.warning("去背已啟用但未找到去背的圖片，將使用原始影格進行打包")
         else:
             if enable_bg_removal and output_format.upper() != "PNG":
                 logging.warning(f"輸出格式為 {output_format}，跳過去背處理（僅支援 PNG）")
 
-        # 根據是否啟用去背來決定使用哪些圖片進行打包
-        if enable_bg_removal and output_format.upper() == "PNG":
-            # 如果啟用了去背，使用 filter_ 前綴的圖片
-            filter_frames = glob.glob(os.path.join(frames_dir, "filter_*.png"))
-            if filter_frames:
-                logging.info(f"去背已啟用，使用 {len(filter_frames)} 個去背的圖片進行打包")
-                # 直接在這個目錄掃描時會同時包含原始和去背圖片，我們需要只用去背的
-                frames_dir_for_packing = frames_dir  # 目錄不變，但掃描時會優先去背圖片
-            else:
-                logging.warning("去背已啟用但未找到去背的圖片，將使用原始影格進行打包")
-                frames_dir_for_packing = frames_dir
-        else:
-            # 未啟用去背，使用原始圖片
-            if enable_bg_removal:
-                logging.info("去背已啟用但輸出格式不是 PNG，使用原始影格進行打包")
-            frames_dir_for_packing = frames_dir
+        frames_dir_for_packing = frames_dir
+
+        # 影格都準備好了才清掉同名舊輸出（前面步驟失敗時保留上一次的結果）
+        _clear_previous_outputs(output_dir, output_name)
 
         # 根據使用者選擇決定使用哪個打包器
         logging.info(f"打包器選擇: {packer_choice}")
@@ -586,24 +689,22 @@ def process_video(mp4_file,
             # 將壓縮信息也添加到設定中
             settings["compressed_count"] = compress_count
 
-        logging.info(f"TexturePacker 完成，生成 {plist_count} 個 plist 檔案")
+        logging.info(f"打包完成，生成 {plist_count} 個 plist 檔案")
 
         # 記錄 metadata 保存
         logging.info(f"保存 metadata 到：{output_dir}")
         save_metadata(output_dir, output_name, settings)
 
         logging.info("✅ 處理完成")
-        return "✅ 處理完成！"
-
-    except (FileError, ConfigError, ConversionError) as e:
-        logging.error(f"{e.error_type.value} - {e.message}")
-        if e.details:
-            logging.debug(f"詳細錯誤：{e.details}")
-        return f"❌ {e.error_type.value}：{e.message}"
-
-    except Exception as e:
-        logging.error(f"未預期的錯誤：{str(e)}", exc_info=True)
-        return f"❌ 處理失敗：{str(e)}"
+        return {
+            "output_dir": output_dir,
+            "output_name": output_name,
+            "video_path": video_path,
+            "frame_count": frame_count,
+            "plist_count": plist_count,
+            "bg_removal": bg_removal_result,
+            "settings": settings,
+        }
 
     finally:
         # 轉換完成後清理臨時目錄（預覽影格在獨立目錄，不受影響）

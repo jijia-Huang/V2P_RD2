@@ -290,12 +290,15 @@ def process_frames_batch(frames_dir, bg_color=None, tolerance=10, output_dir=Non
     for ext in image_extensions:
         image_files.extend(glob.glob(os.path.join(frames_dir, ext)))
         image_files.extend(glob.glob(os.path.join(frames_dir, ext.upper())))
-    
+
     if not image_files:
         raise FileError("資料夾中沒有找到任何圖片檔案", details=f"路徑：{frames_dir}")
-    
-    # 排序檔案
-    image_files.sort()
+
+    # 去重（Windows 檔名不分大小寫，*.png 與 *.PNG 會抓到同一批檔案）並排序
+    unique = {}
+    for path in image_files:
+        unique.setdefault(os.path.normcase(os.path.abspath(path)), path)
+    image_files = sorted(unique.values())
     
     total = len(image_files)
     success = 0

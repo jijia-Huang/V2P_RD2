@@ -187,3 +187,22 @@ python v2p.py --debug
 
 - 首次發布
 - 基本功能完整實現
+
+## 命令列模式（CLI，給腳本／AI 使用）
+
+不帶參數執行 `v2p.py` 照舊開 GUI（打包版 `v2p.exe` 需重新打包後才有 CLI，v2p.spec 已加入相關模組）；第一個參數是子命令時改走 CLI：不開視窗、不等按鍵，stdout 輸出 JSON，日誌走 stderr，結束碼 0=成功／1=失敗／2=參數錯誤。
+
+```bash
+python v2p.py settings                                  # 上次的轉換設定（GUI 或 CLI 最後一次成功的參數）
+python v2p.py convert                                   # 完全照上次設定重跑
+python v2p.py convert -i a.mp4 -n hero --tolerance 12   # 只覆蓋指定的參數，其餘沿用上次
+python v2p.py check videos/v2p_hero                     # 檢查去背品質，產生 bgcheck/v2p_hero/contact_t12.png
+python v2p.py bg-sweep -i a.mp4 --tolerances 4,8,12,16  # 抽樣比較多個去背容差（不產生 plist）
+python v2p.py inspect videos/v2p_hero                   # 檢查 plist／材質／metadata 是否完整
+python v2p.py info a.mp4                                # 影片尺寸
+```
+
+- `convert` 有開去背時會自動附上 `check`：`verdict`（ok / under_removed / over_removed / mixed / review）、問題清單、建議容差與對照圖路徑。
+- 每次成功轉換（GUI 或 CLI）都會把參數存回 `preferences.json` 的 `last_*`；CLI 加 `--no-save` 可不存。
+- 其他參數：`--fps`、`--max 1024x1024`、`--resize 240x427|off`、`--resize-mode`、`--bg/--no-bg`、`--packer auto|python|texturepacker`、`--format`、`--quality`、`--output-dir`、`--ffmpeg`、`--dry-run`。詳見 `python v2p.py convert --help`。
+- Claude Code skill：`V2P_RD2/.claude/skills/v2p-convert`（轉換後自動檢查去背並微調容差重跑）。
